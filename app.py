@@ -53,7 +53,7 @@ elif page == "Company Sentiment & Alerts":
         mention_count=('title', 'count'),
         avg_sentiment=('sentiment', 'mean')
     ).reset_index()
-    summary['alert'] = summary['avg_sentiment'].apply(lambda x: '!Alert!' if x < -0.5 else '')
+    summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
 
     st.write(f"### Company sentiment on {selected_date}:")
     st.dataframe(summary.sort_values("mention_count", ascending=False))
