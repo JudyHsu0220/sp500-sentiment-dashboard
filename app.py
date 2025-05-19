@@ -26,45 +26,66 @@ def load_data():
 
 df = load_data()
 
-# Sidebar
-st.sidebar.title("Sentiment Dashboard")
-page = st.sidebar.radio("Select a view:", ["SPX500 Sentiment Trend", "Company Sentiment & Alerts", "Keyword Cloud"])
+# Sidebar filters
+st.sidebar.title("Filters")
+filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"])
+
+if filter_mode == "Date Range":
+    start_date = st.sidebar.date_input("Start Date", df['date'].min())
+    end_date = st.sidebar.date_input("End Date", df['date'].max())
+    mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
+else:
+    selected_date = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"))
+    mask = df['date'] == pd.to_datetime(selected_date)
+
+filtered_df = df[mask]
+
+# Tabs
+st.title("SP500 News Sentiment Dashboard")
+tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud"])
 
 # 1. SPX500 Sentiment Trendline
-if page == "SPX500 Sentiment Trend":
-    st.title("SPX500 Market Sentiment Trend")
-    spx_df = df[df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean()
-    spx_df_rolling = spx_df.rolling(window=7).mean()
+with tabs[0]:
+    st.header("Sentiment and S&P500 Price Trend")
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(spx_df.index, spx_df.values, label='Daily Sentiment')
-    ax.plot(spx_df_rolling.index, spx_df_rolling.values, label='7-Day Moving Avg', linestyle='--')
-    ax.set_title("S&P 500 Daily Sentiment")
-    ax.legend()
-    st.pyplot(fig)
+    price_df = pd.read_csv("sp500_price_202005_202504.csv")
+    price_df['date'] = pd.to_datetime(price_df['date'])
+    price_df = price_df[price_df['date'].isin(filtered_df['date'].unique())]
+
+    daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean()
+    price_series = price_df.set_index('date')['close']
+
+    df_plot = pd.DataFrame({
+        'Sentiment': daily_sentiment,
+        'Close Price': price_series
+    }).dropna()
+
+    st.line_chart(df_plot)
+
+    st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
+    st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
+    st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
+    st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
 
 # 2. Company Sentiment Summary
-elif page == "Company Sentiment & Alerts":
-    st.title("Company-Level Sentiment Alerts")
-    selected_date = st.date_input("Select a date:", value=pd.to_datetime("2024-12-01"))
-    daily_df = df[df['date'] == pd.to_datetime(selected_date)]
-
-    summary = daily_df.groupby("related").agg(
+with tabs[1]:
+    st.header("Company Mentions and Alerts")
+    mention_df = filtered_df[filtered_df['related'] != 'S&P 500']
+    summary = mention_df.groupby("related").agg(
         mention_count=('title', 'count'),
         avg_sentiment=('sentiment', 'mean')
     ).reset_index()
     summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
 
-    st.write(f"### Company sentiment on {selected_date}:")
     st.dataframe(summary.sort_values("mention_count", ascending=False))
 
 # 3. Keyword Cloud
-elif page == "Keyword Cloud":
-    st.title("Keyword Frequency Word Cloud")
-    all_tokens = [token for tokens in df['tokens'] for token in tokens if isinstance(token, str)]
-    token_freq = pd.Series(all_tokens).value_counts().to_dict()
+with tabs[2]:
+    st.header("Sentiment Word Cloud")
+    all_tokens = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
+    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are'})
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate(" ".join(all_tokens))
 
-    wordcloud = WordCloud(width=1000, height=500, background_color='white').generate_from_frequencies(token_freq)
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
