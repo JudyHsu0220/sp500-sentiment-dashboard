@@ -10,12 +10,14 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from wordcloud import WordCloud
 import altair as alt
+from wordcloud import WordCloud, STOPWORDS
 import ast
+from datetime import datetime
 
-# Load cleaned dataset
+# Load data
 @st.cache_data
+
 def load_data():
     df = pd.read_csv("merged_sentiment_cleaned_202005_202504.csv")
     df['date'] = pd.to_datetime(df['date'])
