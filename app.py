@@ -57,10 +57,12 @@ with tabs[0]:
     daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean()
     price_series = price_df.set_index('date')['close']
 
+    aligned_dates = daily_sentiment.index.intersection(price_series.index)
+
     df_plot = pd.DataFrame({
-        'date': daily_sentiment.index,
-        'Sentiment': daily_sentiment.values,
-        'Close Price': price_series[daily_sentiment.index].values
+        'date': aligned_dates,
+        'Sentiment': daily_sentiment[aligned_dates].values,
+        'Close Price': price_series[aligned_dates].values
     }).dropna()
 
     base = alt.Chart(df_plot).encode(x='date:T')
