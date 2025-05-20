@@ -7,6 +7,8 @@ Original file is located at
     https://colab.research.google.com/drive/1hqWpib6xNj1SBW4TxPwkwclsN7r8-T8M
 """
 
+!pip install altair
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -68,44 +70,44 @@ with tabs[0]:
         'Close Price': price_series[aligned_dates].values
     }).dropna()
 
-    if df_plot.empty:
-        st.warning("No data available for this time range. Please adjust your filter.")
-    else:
-        base = alt.Chart(df_plot).encode(x='date:T')
+    base = alt.Chart(df_plot).encode(x='date:T')
 
-        # 固定 Price y 軸範圍：4800～6300
-        line_price = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q',
-                    axis=alt.Axis(title='Price', titleColor='blue'),
-                    scale=alt.Scale(domain=[4800, 6300]))
-        )
+    line_price = base.mark_line(color='blue').encode(
+        y=alt.Y('Close Price:Q',
+                axis=alt.Axis(title='Price', titleColor='blue'),
+                scale=alt.Scale(domain=[4000, 6500])),
+        tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
+    )
 
-        # 固定 Sentiment y 軸範圍：-1.1～0.5
-        line_sentiment = base.mark_line(color='orange').encode(
-            y=alt.Y('Sentiment:Q',
-                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                    scale=alt.Scale(domain=[-1.1, 0.5]))
-        )
+    line_sentiment = base.mark_line(color='orange').encode(
+        y=alt.Y('Sentiment:Q',
+                axis=alt.Axis(title='Sentiment', titleColor='orange'),
+                scale=alt.Scale(domain=[-1.1, 0.5])),
+        tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
+    )
 
-        chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
-        st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(
+        alt.layer(line_price, line_sentiment)
+        .resolve_scale(y='independent')
+        .interactive(),
+        use_container_width=True
+    )
 
-        # 並排統計數值
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col1:
-            st.subheader("Price Stats")
-            st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
-            st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
-            st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
-            st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
+    with col1:
+        st.subheader("Price Stats")
+        st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
+        st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
+        st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
+        st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
 
-        with col2:
-            st.subheader("Sentiment Stats")
-            st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
-            st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
-            st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
-            st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
+    with col2:
+        st.subheader("Sentiment Stats")
+        st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
+        st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
+        st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
+        st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
