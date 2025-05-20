@@ -58,28 +58,28 @@ with tabs[0]:
     price_series = price_df.set_index('date')['close']
 
     df_plot = pd.DataFrame({
-        'Sentiment': daily_sentiment,
-        'Close Price': price_series
+        'date': daily_sentiment.index,
+        'Sentiment': daily_sentiment.values,
+        'Close Price': price_series[daily_sentiment.index].values
     }).dropna()
 
-    base = alt.Chart(df_plot.reset_index()).encode(x='date:T')
-    line1 = base.mark_line(color='steelblue').encode(y=alt.Y('Close Price', axis=alt.Axis(title='Price')))
-    line2 = base.mark_line(color='orange').encode(y=alt.Y('Sentiment', axis=alt.Axis(title='Sentiment')))
-    st.altair_chart(line1 + line2, use_container_width=True)
+    base = alt.Chart(df_plot).encode(x='date:T')
+    line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price')))
+    line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment', titleColor='orange')))
+
+    st.altair_chart(alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive(), use_container_width=True)
 
     st.subheader("Sentiment Stats")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Min Sentiment", round(daily_sentiment.min(), 3))
-    col2.metric("Max Sentiment", round(daily_sentiment.max(), 3))
-    col3.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
-    col4.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
+    st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
+    st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
+    st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
+    st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
 
     st.subheader("Price Stats")
-    col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Min Price", round(price_series.min(), 2))
-    col6.metric("Max Price", round(price_series.max(), 2))
-    col7.metric("Mean Price", round(price_series.mean(), 2))
-    col8.metric("Std Dev Price", round(price_series.std(), 2))
+    st.metric("Min Price", round(price_series.min(), 2))
+    st.metric("Max Price", round(price_series.max(), 2))
+    st.metric("Mean Price", round(price_series.mean(), 2))
+    st.metric("Std Dev Price", round(price_series.std(), 2))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
