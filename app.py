@@ -16,6 +16,7 @@ import ast
 from datetime import datetime
 import re
 from collections import Counter
+import string
 
 # Load data
 @st.cache_data
@@ -60,30 +61,43 @@ with tabs[0]:
     price_series = price_df.set_index('date')['close']
 
     aligned_dates = daily_sentiment.index.intersection(price_series.index)
-
     df_plot = pd.DataFrame({
         'date': aligned_dates,
         'Sentiment': daily_sentiment[aligned_dates].values,
         'Close Price': price_series[aligned_dates].values
     }).dropna()
 
+    sentiment_range = [df_plot['Sentiment'].min(), df_plot['Sentiment'].max()]
+    price_range = [df_plot['Close Price'].min(), df_plot['Close Price'].max()]
+
     base = alt.Chart(df_plot).encode(x='date:T')
-    line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price', titleColor='blue')))
-    line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment', titleColor='orange')))
+
+    line_price = base.mark_line(color='blue').encode(
+        y=alt.Y('Close Price:Q', scale=alt.Scale(domain=price_range), axis=alt.Axis(title='Price', titleColor='blue'))
+    )
+
+    line_sentiment = base.mark_line(color='orange').encode(
+        y=alt.Y('Sentiment:Q', scale=alt.Scale(domain=sentiment_range), axis=alt.Axis(title='Sentiment', titleColor='orange'))
+    )
 
     st.altair_chart(alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive(), use_container_width=True)
 
-    st.subheader("Sentiment Stats")
-    st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
-    st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
-    st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
-    st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
+    # Columns for stats
+    col1, col2 = st.columns(2)
 
-    st.subheader("Price Stats")
-    st.metric("Min Price", round(price_series.min(), 2))
-    st.metric("Max Price", round(price_series.max(), 2))
-    st.metric("Mean Price", round(price_series.mean(), 2))
-    st.metric("Std Dev Price", round(price_series.std(), 2))
+    with col1:
+        st.subheader("Price Stats")
+        st.metric("Min Price", round(price_series.min(), 2))
+        st.metric("Max Price", round(price_series.max(), 2))
+        st.metric("Mean Price", round(price_series.mean(), 2))
+        st.metric("Std Dev Price", round(price_series.std(), 2))
+
+    with col2:
+        st.subheader("Sentiment Stats")
+        st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
+        st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
+        st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
+        st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
@@ -100,25 +114,39 @@ with tabs[1]:
 # 3. Keyword Cloud
 with tabs[2]:
     st.header("Sentiment Word Cloud")
-    all_tokens = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
-    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are'})
 
-    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate(" ".join(all_tokens))
+    # Join all tokens into lowercase and remove punctuation
+    all_tokens_raw = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
+    cleaned_tokens = [
+        re.sub(r'[^\w\s]', '', token) for token in all_tokens_raw
+        if token.isalpha()
+    ]
+
+    stopwords = set(STOPWORDS).union({
+        'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are', 'a', 'an', 'this', 'that'
+    })
+
+    filtered_tokens = [word for word in cleaned_tokens if word not in stopwords and len(word) > 1]
+
+    wordcloud = WordCloud(
+        width=1000, height=500, background_color='white', stopwords=stopwords
+    ).generate(" ".join(filtered_tokens))
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
     st.pyplot(fig)
 
-    # Top 5 tokens and related headlines
+    # Top 5 keywords and related headlines
     st.subheader("Top 5 Keywords and Related Headlines")
-    top_tokens = Counter([w for w in all_tokens if w not in stopwords]).most_common(5)
+    top_tokens = Counter(filtered_tokens).most_common(5)
+
     for word, _ in top_tokens:
         st.markdown(f"**{word}**")
         try:
-            safe_word = re.escape(word)
-            headlines = filtered_df[filtered_df['title'].str.contains(safe_word, case=False, na=False)].head(5)['title'].tolist()
-        except Exception as e:
-            headlines = ["Error extracting headlines"]
-        for h in headlines:
-            st.markdown(f"- {h}")
+            pattern = re.compile(rf'\b{re.escape(word)}\b', flags=re.IGNORECASE)
+            headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].head(5).tolist()
+            for h in headlines:
+                st.markdown(f"- {h}")
+        except re.error:
+            st.markdown("_Error parsing keyword pattern_")
