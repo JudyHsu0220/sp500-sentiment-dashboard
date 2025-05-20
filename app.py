@@ -114,6 +114,9 @@ with tabs[2]:
     st.subheader("Top 5 Keywords and Related Headlines")
     for word, _ in top_tokens:
         st.markdown(f"**{word}**")
-        headlines = filtered_df[filtered_df['title'].str.contains(word, case=False, na=False)].head(5)['title'].tolist()
-        for h in headlines:
-            st.markdown(f"- {h}")
+        try:
+            headlines = filtered_df[filtered_df['title'].str.contains(re.escape(word), case=False, na=False)].head(5)['title'].tolist()
+            for h in headlines:
+                st.markdown(f"- {h}")
+        except re.error:
+            st.markdown("- Error finding related headlines due to invalid keyword")
