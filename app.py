@@ -98,20 +98,20 @@ with tabs[2]:
     st.header("Sentiment Word Cloud")
     all_tokens = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
     stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are'})
-    filtered_tokens = [word for word in all_tokens if word not in stopwords and word.isalpha()]
-    word_freq = Counter(filtered_tokens)
-    top5_words = word_freq.most_common(5)
 
-    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate_from_frequencies(word_freq)
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate(" ".join(all_tokens))
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
     st.pyplot(fig)
 
+    # Top 5 tokens and related headlines
+    from collections import Counter
+    top_tokens = Counter([w for w in all_tokens if w not in stopwords]).most_common(5)
     st.subheader("Top 5 Keywords and Related Headlines")
-    for word, _ in top5_words:
-        st.markdown(f"**{word.capitalize()}**")
-        titles = filtered_df[filtered_df['tokens'].apply(lambda tokens: word in [t.lower() for t in tokens])]['title'].head(5).tolist()
-        for t in titles:
-            st.markdown(f"- {t}")
+    for word, _ in top_tokens:
+        st.markdown(f"**{word}**")
+        headlines = filtered_df[filtered_df['title'].str.contains(word, case=False, na=False)].head(5)['title'].tolist()
+        for h in headlines:
+            st.markdown(f"- {h}")
