@@ -14,6 +14,8 @@ import altair as alt
 from wordcloud import WordCloud, STOPWORDS
 import ast
 from datetime import datetime
+import re
+from collections import Counter
 
 # Load data
 @st.cache_data
@@ -66,7 +68,7 @@ with tabs[0]:
     }).dropna()
 
     base = alt.Chart(df_plot).encode(x='date:T')
-    line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price')))
+    line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price', titleColor='blue')))
     line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment', titleColor='orange')))
 
     st.altair_chart(alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive(), use_container_width=True)
@@ -109,14 +111,14 @@ with tabs[2]:
     st.pyplot(fig)
 
     # Top 5 tokens and related headlines
-    from collections import Counter
-    top_tokens = Counter([w for w in all_tokens if w not in stopwords]).most_common(5)
     st.subheader("Top 5 Keywords and Related Headlines")
+    top_tokens = Counter([w for w in all_tokens if w not in stopwords]).most_common(5)
     for word, _ in top_tokens:
         st.markdown(f"**{word}**")
         try:
-            headlines = filtered_df[filtered_df['title'].str.contains(re.escape(word), case=False, na=False)].head(5)['title'].tolist()
-            for h in headlines:
-                st.markdown(f"- {h}")
-        except re.error:
-            st.markdown("- Error finding related headlines due to invalid keyword")
+            safe_word = re.escape(word)
+            headlines = filtered_df[filtered_df['title'].str.contains(safe_word, case=False, na=False)].head(5)['title'].tolist()
+        except Exception as e:
+            headlines = ["Error extracting headlines"]
+        for h in headlines:
+            st.markdown(f"- {h}")
