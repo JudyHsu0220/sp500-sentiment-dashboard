@@ -71,42 +71,39 @@ with tabs[0]:
     if df_plot.empty:
         st.warning("No data available for this time range. Please adjust your filter.")
     else:
-        price_min = df_plot['Close Price'].min()
-        price_max = df_plot['Close Price'].max()
-        senti_min = df_plot['Sentiment'].min()
-        senti_max = df_plot['Sentiment'].max()
-
         base = alt.Chart(df_plot).encode(x='date:T')
 
+        # 固定 Price y 軸範圍：4800～6300
         line_price = base.mark_line(color='blue').encode(
             y=alt.Y('Close Price:Q',
                     axis=alt.Axis(title='Price', titleColor='blue'),
-                    scale=alt.Scale(domain=[max(0, price_min - 100), price_max + 100]))
+                    scale=alt.Scale(domain=[4800, 6300]))
         )
 
+        # 固定 Sentiment y 軸範圍：-1.1～0.5
         line_sentiment = base.mark_line(color='orange').encode(
             y=alt.Y('Sentiment:Q',
                     axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                    scale=alt.Scale(domain=[senti_min - 0.1, senti_max + 0.1]))
+                    scale=alt.Scale(domain=[-1.1, 0.5]))
         )
 
         chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
-        # Side-by-side stats
+        # 並排統計數值
         col1, col2 = st.columns(2)
 
         with col1:
             st.subheader("Price Stats")
-            st.metric("Min Price", round(price_min, 2))
-            st.metric("Max Price", round(price_max, 2))
+            st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
+            st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
             st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
             st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
 
         with col2:
             st.subheader("Sentiment Stats")
-            st.metric("Min Sentiment", round(senti_min, 3))
-            st.metric("Max Sentiment", round(senti_max, 3))
+            st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
+            st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
             st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
