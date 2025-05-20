@@ -50,23 +50,15 @@ st.title("SP500 News Sentiment Dashboard")
 tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud"])
 
 # 1. SPX500 Sentiment Trendline
-with tabs[0]:
-    st.header("Sentiment and S&P500 Price Trend")
+df_plot = pd.DataFrame({
+    'date': aligned_dates,
+    'Sentiment': daily_sentiment[aligned_dates].values,
+    'Close Price': price_series[aligned_dates].values
+}).dropna()
 
-    price_df = pd.read_csv("sp500_price_202005_202504.csv")
-    price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df = price_df[price_df['date'].isin(filtered_df['date'].unique())]
-
-    daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean()
-    price_series = price_df.set_index('date')['close']
-
-    aligned_dates = daily_sentiment.index.intersection(price_series.index)
-    df_plot = pd.DataFrame({
-        'date': aligned_dates,
-        'Sentiment': daily_sentiment[aligned_dates].values,
-        'Close Price': price_series[aligned_dates].values
-    }).dropna()
-
+if df_plot.empty or df_plot[['Sentiment', 'Close Price']].isnull().any().any():
+    st.warning("⚠️ No aligned sentiment or price data available for the selected period.")
+else:
     sentiment_range = [df_plot['Sentiment'].min(), df_plot['Sentiment'].max()]
     price_range = [df_plot['Close Price'].min(), df_plot['Close Price'].max()]
 
@@ -80,24 +72,26 @@ with tabs[0]:
         y=alt.Y('Sentiment:Q', scale=alt.Scale(domain=sentiment_range), axis=alt.Axis(title='Sentiment', titleColor='orange'))
     )
 
-    st.altair_chart(alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive(), use_container_width=True)
+    st.altair_chart(
+        alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive(),
+        use_container_width=True
+    )
 
-    # Columns for stats
+    # Split stats into columns
     col1, col2 = st.columns(2)
-
     with col1:
         st.subheader("Price Stats")
-        st.metric("Min Price", round(price_series.min(), 2))
-        st.metric("Max Price", round(price_series.max(), 2))
-        st.metric("Mean Price", round(price_series.mean(), 2))
-        st.metric("Std Dev Price", round(price_series.std(), 2))
+        st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
+        st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
+        st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
+        st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
 
     with col2:
         st.subheader("Sentiment Stats")
-        st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
-        st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
-        st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
-        st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
+        st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
+        st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
+        st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
+        st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
