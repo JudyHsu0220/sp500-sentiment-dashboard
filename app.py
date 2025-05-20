@@ -62,12 +62,24 @@ with tabs[0]:
         'Close Price': price_series
     }).dropna()
 
-    st.line_chart(df_plot)
+    base = alt.Chart(df_plot.reset_index()).encode(x='date:T')
+    line1 = base.mark_line(color='steelblue').encode(y=alt.Y('Close Price', axis=alt.Axis(title='Price')))
+    line2 = base.mark_line(color='orange').encode(y=alt.Y('Sentiment', axis=alt.Axis(title='Sentiment')))
+    st.altair_chart(line1 + line2, use_container_width=True)
 
-    st.metric("Min Sentiment", round(daily_sentiment.min(), 3))
-    st.metric("Max Sentiment", round(daily_sentiment.max(), 3))
-    st.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
-    st.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
+    st.subheader("Sentiment Stats")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Min Sentiment", round(daily_sentiment.min(), 3))
+    col2.metric("Max Sentiment", round(daily_sentiment.max(), 3))
+    col3.metric("Mean Sentiment", round(daily_sentiment.mean(), 3))
+    col4.metric("Std Dev Sentiment", round(daily_sentiment.std(), 3))
+
+    st.subheader("Price Stats")
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Min Price", round(price_series.min(), 2))
+    col6.metric("Max Price", round(price_series.max(), 2))
+    col7.metric("Mean Price", round(price_series.mean(), 2))
+    col8.metric("Std Dev Price", round(price_series.std(), 2))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
@@ -86,9 +98,20 @@ with tabs[2]:
     st.header("Sentiment Word Cloud")
     all_tokens = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
     stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are'})
-    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate(" ".join(all_tokens))
+    filtered_tokens = [word for word in all_tokens if word not in stopwords and word.isalpha()]
+    word_freq = Counter(filtered_tokens)
+    top5_words = word_freq.most_common(5)
+
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate_from_frequencies(word_freq)
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
     st.pyplot(fig)
+
+    st.subheader("Top 5 Keywords and Related Headlines")
+    for word, _ in top5_words:
+        st.markdown(f"**{word.capitalize()}**")
+        titles = filtered_df[filtered_df['tokens'].apply(lambda tokens: word in [t.lower() for t in tokens])]['title'].head(5).tolist()
+        for t in titles:
+            st.markdown(f"- {t}")
