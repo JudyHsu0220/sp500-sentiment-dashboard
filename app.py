@@ -68,36 +68,34 @@ with tabs[0]:
         'Close Price': price_series[aligned_dates].values
     }).dropna()
 
-    if df_plot.empty or df_plot["Sentiment"].isna().all() or df_plot["Close Price"].isna().all():
-        st.warning("No sentiment or price data available for the selected period.")
+    if df_plot.empty:
+        st.warning("No data available for this time range. Please adjust your filter.")
     else:
-        price_min = df_plot["Close Price"].min()
-        price_max = df_plot["Close Price"].max()
-        sentiment_min = df_plot["Sentiment"].min()
-        sentiment_max = df_plot["Sentiment"].max()
+        price_min = df_plot['Close Price'].min()
+        price_max = df_plot['Close Price'].max()
+        senti_min = df_plot['Sentiment'].min()
+        senti_max = df_plot['Sentiment'].max()
 
         base = alt.Chart(df_plot).encode(x='date:T')
 
         line_price = base.mark_line(color='blue').encode(
             y=alt.Y('Close Price:Q',
-                    scale=alt.Scale(domain=[price_min, price_max]),
-                    axis=alt.Axis(title='Price', titleColor='blue'))
+                    axis=alt.Axis(title='Price', titleColor='blue'),
+                    scale=alt.Scale(domain=[max(0, price_min - 100), price_max + 100]))
         )
 
         line_sentiment = base.mark_line(color='orange').encode(
             y=alt.Y('Sentiment:Q',
-                    scale=alt.Scale(domain=[sentiment_min, sentiment_max]),
-                    axis=alt.Axis(title='Sentiment', titleColor='orange'))
+                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
+                    scale=alt.Scale(domain=[senti_min - 0.1, senti_max + 0.1]))
         )
 
-        st.altair_chart(
-            alt.layer(line_price, line_sentiment)
-            .resolve_scale(y='independent')
-            .interactive(),
-            use_container_width=True
-        )
+        chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
+        st.altair_chart(chart, use_container_width=True)
 
+        # Side-by-side stats
         col1, col2 = st.columns(2)
+
         with col1:
             st.subheader("Price Stats")
             st.metric("Min Price", round(price_min, 2))
@@ -107,8 +105,8 @@ with tabs[0]:
 
         with col2:
             st.subheader("Sentiment Stats")
-            st.metric("Min Sentiment", round(sentiment_min, 3))
-            st.metric("Max Sentiment", round(sentiment_max, 3))
+            st.metric("Min Sentiment", round(senti_min, 3))
+            st.metric("Max Sentiment", round(senti_max, 3))
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
             st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
