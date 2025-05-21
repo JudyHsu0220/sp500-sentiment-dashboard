@@ -7,68 +7,82 @@ Original file is located at
     https://colab.research.google.com/drive/1gLmg8-1P-Hi6U0ktOeSDuHB0QTKSAG1D
 """
 
-import pandas as pd
-import requests
 from datetime import datetime, timedelta
+import requests
 import yfinance as yf
+import pandas as pd
 import os
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from scipy.special import softmax
+import torch
 
-# Setup
-NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
-NEWS_CSV = "merged_sentiment_cleaned_202005_202504.csv"
-PRICE_CSV = "sp500_price_202005_202504.csv"
+# Set up date range
+yesterday = datetime.today() - timedelta(days=1)
+start_date = yesterday.strftime('%Y-%m-%d')
+end_date = (yesterday + timedelta(days=1)).strftime('%Y-%m-%d')
 
-# News data
-def fetch_news():
-    today = datetime.utcnow().date()
-    yesterday = today - timedelta(days=1)
+# Set up FinBERT
+tokenizer = AutoTokenizer.from_pretrained("ProsusAI/finbert")
+model = AutoModelForSequenceClassification.from_pretrained("ProsusAI/finbert")
 
-    url = (
-        f"https://newsapi.org/v2/everything?"
-        f"q=S%26P%20500&from={yesterday}&to={today}&"
-        f"language=en&sortBy=publishedAt&pageSize=100&apiKey={NEWSAPI_KEY}"
-    )
+def get_sentiment_score(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        scores = softmax(outputs.logits.numpy()[0])
+    return scores[2] - scores[0]  # positive - negative
 
-    r = requests.get(url)
-    data = r.json()
+# Get News from NewsAPI
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
 
-    rows = []
-    for article in data.get("articles", []):
-        rows.append({
-            "date": article["publishedAt"][:10],
-            "title": article["title"],
-            "description": article["description"],
-            "content": article["content"],
-            "related": "S&P 500",
-            "source": article["source"]["name"]
-        })
+news_url = "https://newsapi.org/v2/everything"
+params = {
+    "q": "\"S&P 500\" OR \"SP500\" OR \"Standard & Poor\"",
+    "from": start_date,
+    "to": start_date,
+    "sortBy": "relevancy",
+    "language": "en",
+    "pageSize": 100,
+    "apiKey": NEWS_API_KEY,
+}
 
-    return pd.DataFrame(rows)
+response = requests.get(news_url, params=params)
+articles = response.json().get("articles", [])
 
-# S&P 500 close price
-def fetch_price():
-    end = datetime.utcnow().date()
-    start = end - timedelta(days=3)
-    df = yf.download("^GSPC", start=start, end=end)
-    df = df.reset_index()[["Date", "Close"]]
-    df.columns = ["date", "close"]
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    return df
+news_data = []
+for article in articles:
+    title = article["title"]
+    sentiment_score = get_sentiment_score(title)
+    news_data.append({
+        "date": start_date,
+        "title": title,
+        "sentiment": round(sentiment_score, 3),
+        "source": article["source"]["name"]
+    })
 
-# Updata CSV file
-def update_csv():
-    news_df = fetch_news()
-    price_df = fetch_price()
+news_df = pd.DataFrame(news_data)
 
-    if not news_df.empty:
-        old_news = pd.read_csv(NEWS_CSV)
-        combined_news = pd.concat([old_news, news_df], ignore_index=True).drop_duplicates()
-        combined_news.to_csv(NEWS_CSV, index=False)
+# Get S&P500 Close Price
+price_df = yf.download("^GSPC", start=start_date, end=end_date)[["Close"]].reset_index()
+price_df["date"] = price_df["Date"].dt.strftime('%Y-%m-%d')
+price_df = price_df.rename(columns={"Close": "close"}).drop(columns=["Date"])
 
-    if not price_df.empty:
-        old_price = pd.read_csv(PRICE_CSV)
-        combined_price = pd.concat([old_price, price_df], ignore_index=True).drop_duplicates()
-        combined_price.to_csv(PRICE_CSV, index=False)
+# Append and Save
+news_file = "merged_sentiment_cleaned_202005_202504.csv"
+price_file = "sp500_price_202005_202504.csv"
 
-if __name__ == "__main__":
-    update_csv()
+if os.path.exists(news_file):
+    existing_news = pd.read_csv(news_file)
+    combined_news = pd.concat([existing_news, news_df], ignore_index=True)
+    combined_news.drop_duplicates(subset=["date", "title"], inplace=True)
+    combined_news.to_csv(news_file, index=False)
+else:
+    news_df.to_csv(news_file, index=False)
+
+if os.path.exists(price_file):
+    existing_price = pd.read_csv(price_file)
+    combined_price = pd.concat([existing_price, price_df], ignore_index=True)
+    combined_price.drop_duplicates(subset=["date"], inplace=True)
+    combined_price.to_csv(price_file, index=False)
+else:
+    price_df.to_csv(price_file, index=False)
