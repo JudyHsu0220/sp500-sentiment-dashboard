@@ -3,3 +3,5 @@ pandas
 matplotlib
 wordcloud
 altair
+requests
+yfinance
