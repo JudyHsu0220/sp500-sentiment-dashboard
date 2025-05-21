@@ -2,14 +2,14 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: "0 12 * * *" 
-  workflow_dispatch:      
+    - cron: "0 12 * * *"  
+  workflow_dispatch:     
 
 jobs:
   update:
     runs-on: ubuntu-latest
     env:
-      NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+      NEWS_API_KEY: ${{ secrets.NEWSAPI_KEY }}
 
     steps:
       - name: Checkout Repo
@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas requests yfinance transformers torch
+          pip install pandas requests yfinance transformers torch scipy
 
       - name: Run update script
         run: python update_data.py
