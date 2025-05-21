@@ -2,8 +2,8 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: "0 12 * * *"  
-  workflow_dispatch:  
+    - cron: "0 12 * * *" 
+  workflow_dispatch:      
 
 jobs:
   update:
@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas requests yfinance
+          pip install pandas requests yfinance transformers torch
 
       - name: Run update script
         run: python update_data.py
