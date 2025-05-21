@@ -53,59 +53,58 @@ tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud"])
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
 
+    # Load and filter price data
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
     price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df = price_df[price_df['date'].isin(filtered_df['date'].unique())]
 
-    daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean()
-    price_series = price_df.set_index('date')['close']
+    # Aggregate daily sentiment (S&P 500 only)
+    daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean().reset_index()
 
-    aligned_dates = daily_sentiment.index.intersection(price_series.index)
+    # Filter price data to selected date range
+    price_df = price_df[price_df['date'].between(filtered_df['date'].min(), filtered_df['date'].max())]
 
-    df_plot = pd.DataFrame({
-        'date': aligned_dates,
-        'Sentiment': daily_sentiment[aligned_dates].values,
-        'Close Price': price_series[aligned_dates].values
-    }).dropna()
+    # Merge sentiment with price on date
+    df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
+    df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
-    base = alt.Chart(df_plot).encode(x='date:T')
+    # If no data, display warning
+    if df_plot.empty:
+        st.warning("No data available for the selected date range.")
+    else:
+        # Plot
+        base = alt.Chart(df_plot).encode(x='date:T')
 
-    line_price = base.mark_line(color='blue').encode(
-        y=alt.Y('Close Price:Q',
-                axis=alt.Axis(title='Price', titleColor='blue'),
-                scale=alt.Scale(domain=[4000, 6500])),
-        tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
-    )
+        line_price = base.mark_line(color='blue').encode(
+            y=alt.Y('Close Price:Q',
+                    axis=alt.Axis(title='Price', titleColor='blue'),
+                    scale=alt.Scale(domain=[4000, 6500])),
+            tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
+        )
 
-    line_sentiment = base.mark_line(color='orange').encode(
-        y=alt.Y('Sentiment:Q',
-                axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                scale=alt.Scale(domain=[-1.1, 0.5])),
-        tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
-    )
+        line_sentiment = base.mark_line(color='orange').encode(
+            y=alt.Y('Sentiment:Q',
+                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
+                    scale=alt.Scale(domain=[-1.1, 0.5])),
+            tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
+        )
 
-    st.altair_chart(
-        alt.layer(line_price, line_sentiment)
-        .resolve_scale(y='independent')
-        .interactive(),
-        use_container_width=True
-    )
+        chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
+        st.altair_chart(chart, use_container_width=True)
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Price Stats")
-        st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
-        st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
-        st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
-        st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
-
-    with col2:
-        st.subheader("Sentiment Stats")
-        st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
-        st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
-        st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
-        st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
+        # Side-by-side Stats
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Price Stats")
+            st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
+            st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
+            st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
+            st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
+        with col2:
+            st.subheader("Sentiment Stats")
+            st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
+            st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
+            st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
+            st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
 # 2. Company Sentiment Summary
 with tabs[1]:
