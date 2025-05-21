@@ -2,14 +2,15 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: "0 12 * * *"  
-  workflow_dispatch:     
+    - cron: "0 12 * * *" 
+  workflow_dispatch:      
 
 jobs:
   update:
     runs-on: ubuntu-latest
+
     env:
-      NEWS_API_KEY: ${{ secrets.NEWSAPI_KEY }}
+      NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
 
     steps:
       - name: Checkout Repo
@@ -22,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas requests yfinance transformers torch scipy
+          pip install pandas requests yfinance transformers scipy torch
 
       - name: Run update script
         run: python update_data.py
@@ -31,7 +32,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git pull origin main --rebase
           git add *.csv
           git commit -m "Auto-update daily data" || echo "No changes to commit"
-          git push
+          git push origin main
