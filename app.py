@@ -7,8 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1hqWpib6xNj1SBW4TxPwkwclsN7r8-T8M
 """
 
-!pip install altair
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
