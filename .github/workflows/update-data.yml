@@ -3,7 +3,7 @@ name: Daily Data Update
 on:
   schedule:
     - cron: "0 12 * * *"  
-  workflow_dispatch:     
+  workflow_dispatch:      
 
 jobs:
   update:
@@ -36,8 +36,9 @@ jobs:
 
           git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git
 
-          git pull origin main --rebase
-
           git add *.csv
           git commit -m "Auto-update daily data" || echo "No changes to commit"
+
+          git pull origin main --rebase
+
           git push origin HEAD:main
