@@ -30,7 +30,7 @@ jobs:
         run: python update_data.py
 
       - name: Install GitHub CLI
-        uses: cli/cli-action@v2
+        uses: actions/setup-gh@v2
 
       - name: Commit and Push changes using GH CLI
         run: |
@@ -41,9 +41,4 @@ jobs:
 
           echo "${GH_PAT}" | gh auth login --with-token
           gh repo set-default ${{ github.repository }}
-          gh repo clone ${{ github.repository }} temp-repo
-          cd temp-repo
-          cp ../*.csv .
-          git add *.csv
-          git commit -m "Auto-update daily data" || echo "No changes"
           git push
