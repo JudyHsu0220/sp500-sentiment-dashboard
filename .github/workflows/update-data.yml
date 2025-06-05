@@ -2,8 +2,8 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: "0 12 * * *"
-  workflow_dispatch:
+    - cron: "0 12 * * *"  
+  workflow_dispatch:       
 
 jobs:
   update:
@@ -14,7 +14,7 @@ jobs:
       GH_PAT: ${{ secrets.GH_PAT }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout Repo
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -22,23 +22,22 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           pip install pandas requests yfinance transformers scipy torch
 
       - name: Run update script
         run: python update_data.py
 
-      - name: Install GitHub CLI
-        uses: actions/setup-gh@v2
-
-      - name: Commit and Push changes using GH CLI
+      - name: Commit & Push updated data
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git
           git add *.csv
           git commit -m "Auto-update daily data" || echo "No changes to commit"
-
+          git pull origin main --rebase
+          git push origin HEAD:main
           echo "${GH_PAT}" | gh auth login --with-token
           gh repo set-default ${{ github.repository }}
           git push
