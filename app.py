@@ -148,6 +148,7 @@ with tabs[3]:
     st.session_state.active_tab = "Prediction"
     st.header("S&P 500 Price Prediction")
     st.info("This page does not apply the sidebar filters.")
+    st.caption("This prediction is based on historical prices, news sentiment, technical indicators, and macroeconomic variables.")
 
     # Load and prepare data
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
