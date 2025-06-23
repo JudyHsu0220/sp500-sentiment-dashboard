@@ -10,11 +10,7 @@ from collections import Counter
 import string
 from prophet import Prophet
 
-# Session state to control sidebar
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Sentiment vs Price"
-
-# Load sentiment data
+# Load data
 @st.cache_data
 def load_data():
     df = pd.read_csv("merged_sentiment_cleaned_202005_202504.csv")
@@ -26,8 +22,16 @@ def load_data():
 
 df = load_data()
 
-# Sidebar (hidden for Prediction)
-if st.session_state.active_tab != "Prediction":
+# Initialize page
+st.title("SP500 News Sentiment Dashboard")
+tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"])
+
+# Handle sidebar visibility based on tab
+active_tab = st.session_state.get("active_tab", "Sentiment vs Price")
+tab_labels = ["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"]
+
+# Sidebar
+if active_tab != "Prediction":
     st.sidebar.title("Filters")
     filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"])
 
@@ -43,55 +47,47 @@ if st.session_state.active_tab != "Prediction":
 else:
     filtered_df = df.copy()
 
-# Main Tabs
-st.title("SP500 News Sentiment Dashboard")
-tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"])
+# Update active tab
+for i, tab in enumerate(tabs):
+    if tab:
+        st.session_state.active_tab = tab_labels[i]
 
-# Tab 1: Sentiment vs Price
+# --- TAB 1 ---
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
 
-    # Company options
+    # Company filter
     company_options = filtered_df['related'].unique().tolist()
     selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
 
-    # Filter sentiment data
     sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
     daily_sentiment = sentiment_df.groupby('date')['sentiment'].mean().reset_index()
 
-    # Load and filter S&P500 price data
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
     price_df['date'] = pd.to_datetime(price_df['date'])
     price_df = price_df[price_df['date'].between(filtered_df['date'].min(), filtered_df['date'].max())]
 
-    # Conbine dara
     df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
     df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
     if df_plot.empty:
         st.warning("No data available for the selected filters.")
     else:
-        # Draw
         base = alt.Chart(df_plot).encode(x='date:T')
 
         line_price = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q',
-                    axis=alt.Axis(title='S&P500 Price', titleColor='blue'),
-                    scale=alt.Scale(domain=[df_plot['Close Price'].min()*0.98, df_plot['Close Price'].max()*1.02])),
+            y=alt.Y('Close Price:Q', axis=alt.Axis(title='S&P500 Price'), scale=alt.Scale(zero=False)),
             tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
         )
 
         line_sentiment = base.mark_line(color='orange').encode(
-            y=alt.Y('Sentiment:Q',
-                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
+            y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment'), scale=alt.Scale(domain=[-1.1, 1.1])),
             tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
         )
 
         chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
-        # Stats
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Price Stats (S&P 500)")
@@ -106,7 +102,7 @@ with tabs[0]:
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
             st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
-# Tab 2: Mentions
+# --- TAB 2 ---
 with tabs[1]:
     st.session_state.active_tab = "Mention & Alert"
     st.header("Company Mentions and Alerts")
@@ -118,7 +114,7 @@ with tabs[1]:
     summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
     st.dataframe(summary.sort_values("mention_count", ascending=False))
 
-# Tab 3: Word Cloud
+# --- TAB 3 ---
 with tabs[2]:
     st.session_state.active_tab = "Word Cloud"
     st.header("Sentiment Word Cloud")
@@ -148,12 +144,12 @@ with tabs[2]:
         except re.error:
             st.markdown("_Error parsing keyword pattern_")
 
-# Tab 4: Prediction
+# --- TAB 4 ---
 with tabs[3]:
     st.session_state.active_tab = "Prediction"
     st.header("S&P 500 Price Prediction")
-
-    st.info("This prediction is based on historical prices only and does not consider news sentiment.")
+    st.info("This page is not applicable to filters.")
+    st.caption("This prediction is based on historical prices only and does not consider news sentiment.")
 
     df_price = pd.read_csv("sp500_price_202005_202504.csv")
     df_price = df_price.rename(columns={"date": "ds", "close": "y"})
@@ -165,7 +161,7 @@ with tabs[3]:
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
-    st.caption(f"Forecasting starts from the next day after the last available price date: {df_price['ds'].max().strftime('%Y-%m-%d')}")
+    st.caption(f"Forecasting starts from: {df_price['ds'].max().strftime('%Y-%m-%d')}")
 
     fig1 = m.plot(forecast)
     st.pyplot(fig1)
