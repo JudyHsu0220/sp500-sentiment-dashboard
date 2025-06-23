@@ -46,7 +46,7 @@ with tabs[0]:
 
     # Company options
     company_options = filtered_df['related'].unique().tolist()
-    selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
+    selected_companies = st.multiselect("Select Company/Companies for sentiment", company_options, default=["S&P 500"])
 
     # Filter sentiment data
     sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
