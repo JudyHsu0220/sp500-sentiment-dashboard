@@ -5,12 +5,18 @@ import matplotlib.pyplot as plt
 import altair as alt
 from wordcloud import WordCloud, STOPWORDS
 import ast
+from datetime import datetime
 import re
 from collections import Counter
+import string
 from prophet import Prophet
 import joblib
 
-# Load sentiment data
+# Session state to control sidebar
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "Sentiment vs Price"
+
+# Load data
 @st.cache_data
 def load_data():
     df = pd.read_csv("merged_sentiment_cleaned_202005_202504.csv")
@@ -22,41 +28,41 @@ def load_data():
 
 df = load_data()
 
-# --- Tabs setup ---
-st.set_page_config(layout="wide")
+# Initialize page
 st.title("SP500 News Sentiment Dashboard")
+tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"])
 
+# Handle sidebar visibility based on tab
+active_tab = st.session_state.get("active_tab", "Sentiment vs Price")
 tab_labels = ["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"]
-tabs = st.tabs(tab_labels)
 
-# --- Sidebar filters ---
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Sentiment vs Price"
+# Sidebar
+if active_tab != "Prediction":
+    st.sidebar.title("Filters")
+    filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"])
 
+    if filter_mode == "Date Range":
+        start_date = st.sidebar.date_input("Start Date", df['date'].min())
+        end_date = st.sidebar.date_input("End Date", df['date'].max())
+        mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
+    else:
+        selected_date = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"))
+        mask = df['date'] == pd.to_datetime(selected_date)
+
+    filtered_df = df[mask]
+else:
+    filtered_df = df.copy()
+
+# Update active tab
 for i, tab in enumerate(tabs):
     if tab:
         st.session_state.active_tab = tab_labels[i]
 
-if st.session_state.active_tab != "Prediction":
-    with st.sidebar:
-        st.title("Filters")
-        filter_mode = st.radio("Filter by", ["Date Range", "Single Day"])
-
-        if filter_mode == "Date Range":
-            start_date = st.date_input("Start Date", df['date'].min())
-            end_date = st.date_input("End Date", df['date'].max())
-            mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
-        else:
-            selected_date = st.date_input("Select Date", value=pd.to_datetime("2024-12-01"))
-            mask = df['date'] == pd.to_datetime(selected_date)
-
-        filtered_df = df[mask]
-else:
-    filtered_df = df.copy()
-
-# --- Tab 1: Sentiment vs Price ---
+# --- TAB 1 ---
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
+
+    # Company filter
     company_options = filtered_df['related'].unique().tolist()
     selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
 
@@ -102,8 +108,9 @@ with tabs[0]:
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
             st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
-# --- Tab 2: Mentions ---
+# --- TAB 2 ---
 with tabs[1]:
+    st.session_state.active_tab = "Mention & Alert"
     st.header("Company Mentions and Alerts")
     mention_df = filtered_df[filtered_df['related'] != 'S&P 500']
     summary = mention_df.groupby("related").agg(
@@ -113,8 +120,9 @@ with tabs[1]:
     summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
     st.dataframe(summary.sort_values("mention_count", ascending=False))
 
-# --- Tab 3: Word Cloud ---
+# --- TAB 3 ---
 with tabs[2]:
+    st.session_state.active_tab = "Word Cloud"
     st.header("Sentiment Word Cloud")
 
     all_tokens_raw = [token.lower() for tokens in filtered_df['tokens'] for token in tokens if isinstance(token, str)]
@@ -142,41 +150,35 @@ with tabs[2]:
         except re.error:
             st.markdown("_Error parsing keyword pattern_")
 
-# --- Tab 4: Prediction ---
+# --- TAB 4 ---
 with tabs[3]:
+    st.session_state.active_tab = "Prediction"
     st.header("S&P 500 Price Prediction")
-    st.info("This page does not apply the sidebar filters.")
+    st.info("This page is not applicable to filters.")
     st.caption("This prediction is based on historical prices, news sentiment, technical indicators, and macroeconomic variables.")
 
-    # Load and prepare data
-    price_df = pd.read_csv("sp500_price_202005_202504.csv")
-    price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df['log_price'] = np.log(price_df['close'])
-    prophet_df = price_df[['date', 'log_price']].rename(columns={'date': 'ds', 'log_price': 'y'})
+    df_price = pd.read_csv("sp500_price_202005_202504.csv")
+    df_price = df_price.rename(columns={"date": "ds", "close": "y"})
+    df_price["ds"] = pd.to_datetime(df_price["ds"])
 
-    # Load additional features
-    extra_df = pd.read_csv("prophet_features.csv")
-    extra_df['ds'] = pd.to_datetime(extra_df['ds'])
-    full_df = pd.merge(prophet_df, extra_df, on='ds', how='inner')
+    m = Prophet()
+    m.fit(df_price)
 
-    # Load trained model and predict
-    model = joblib.load("prophet_model_sentiment.pkl")
-    forecast = model.predict(full_df)
+    future = m.make_future_dataframe(periods=30)
+    forecast = m.predict(future)
 
-    future_start = price_df['date'].max()
-    st.caption(f"Forecasting starts from: {future_start.strftime('%Y-%m-%d')}")
-    fig = model.plot(forecast)
-    st.pyplot(fig)
+    st.caption(f"Forecasting starts from: {df_price['ds'].max().strftime('%Y-%m-%d')}")
 
-    # Display future forecast table
+    fig1 = m.plot(forecast)
+    st.pyplot(fig1)
+
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-    forecast_display = forecast_display[forecast_display['ds'] > future_start]
-    if not forecast_display.empty:
-        forecast_display['Predicted Price'] = np.exp(forecast_display['yhat'])
-        forecast_display['Lower Bound'] = np.exp(forecast_display['yhat_lower'])
-        forecast_display['Upper Bound'] = np.exp(forecast_display['yhat_upper'])
-        forecast_display = forecast_display.rename(columns={'ds': 'Date'})
-        st.dataframe(forecast_display[['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound']].reset_index(drop=True))
-    else:
-        st.warning("No future forecast available in the model output.")
+    forecast_display = forecast_display[forecast_display['ds'] > df_price['ds'].max()]
+    forecast_display = forecast_display.rename(columns={
+        'ds': 'Date',
+        'yhat': 'Predicted Price',
+        'yhat_lower': 'Lower Bound',
+        'yhat_upper': 'Upper Bound'
+    })
+    st.dataframe(forecast_display.reset_index(drop=True))
