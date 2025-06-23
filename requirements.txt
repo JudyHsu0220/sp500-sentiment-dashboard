@@ -1,8 +1,13 @@
 streamlit
 pandas
 matplotlib
-altair
 wordcloud
+altair
+requests
+yfinance
+altair
 scikit-learn
 prophet
-numpy
+python-dateutil
+transformers
+torc
