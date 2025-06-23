@@ -157,25 +157,24 @@ with tabs[3]:
     st.info("This page is not applicable to filters.")
     st.caption("This prediction is based on historical prices, news sentiment, technical indicators, and macroeconomic variables.")
 
-    # Load the model
-    m = joblib.load("prophet_model_sentiment.pkl")
+    df_price = pd.read_csv("sp500_price_202005_202504.csv")
+    df_price = df_price.rename(columns={"date": "ds", "close": "y"})
+    df_price["ds"] = pd.to_datetime(df_price["ds"])
 
-    # Predict the following 30 days
+    m = Prophet()
+    m.fit(df_price)
+
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
-    # Find the first date of prediction (the last date of history data)
-    last_date = future["ds"].iloc[-30]  # start point of prediction
-    st.caption(f"Forecasting starts from: {last_date.strftime('%Y-%m-%d')}")
+    st.caption(f"Forecasting starts from: {df_price['ds'].max().strftime('%Y-%m-%d')}")
 
-    # Draw
     fig1 = m.plot(forecast)
     st.pyplot(fig1)
 
-    # Prediction table
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-    forecast_display = forecast_display[forecast_display['ds'] > last_date]
+    forecast_display = forecast_display[forecast_display['ds'] > df_price['ds'].max()]
     forecast_display = forecast_display.rename(columns={
         'ds': 'Date',
         'yhat': 'Predicted Price',
