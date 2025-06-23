@@ -44,43 +44,56 @@ tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud"])
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
 
+    # Company options
+    company_options = filtered_df['related'].unique().tolist()
+    selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
+
+    # Filter sentiment data
+    sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
+    daily_sentiment = sentiment_df.groupby('date')['sentiment'].mean().reset_index()
+
+    # Load and filter S&P500 price
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
     price_df['date'] = pd.to_datetime(price_df['date'])
-
-    daily_sentiment = filtered_df[filtered_df['related'] == 'S&P 500'].groupby('date')['sentiment'].mean().reset_index()
     price_df = price_df[price_df['date'].between(filtered_df['date'].min(), filtered_df['date'].max())]
+
+    # Combine data
     df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
     df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
     if df_plot.empty:
-        st.warning("No data available for the selected date range.")
+        st.warning("No data available for the selected filters.")
     else:
+        # Draw
         base = alt.Chart(df_plot).encode(x='date:T')
 
         line_price = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price', titleColor='blue'),
-                    scale=alt.Scale(domain=[4000, 6500])),
+            y=alt.Y('Close Price:Q',
+                    axis=alt.Axis(title='S&P500 Price', titleColor='blue'),
+                    scale=alt.Scale(domain=[df_plot['Close Price'].min()*0.98, df_plot['Close Price'].max()*1.02])),
             tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
         )
 
         line_sentiment = base.mark_line(color='orange').encode(
-            y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                    scale=alt.Scale(domain=[-1.1, 0.5])),
+            y=alt.Y('Sentiment:Q',
+                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
+                    scale=alt.Scale(domain=[-1.1, 1.1])),
             tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
         )
 
         chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
+        # Stats
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Price Stats")
+            st.subheader("Price Stats (S&P 500)")
             st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
             st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
             st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
             st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
         with col2:
-            st.subheader("Sentiment Stats")
+            st.subheader("Sentiment Stats (Selected Company)")
             st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
             st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
