@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 from collections import Counter
 import string
+from prophet import Prophet
 
 # Load data
 @st.cache_data
@@ -38,68 +39,57 @@ filtered_df = df[mask]
 
 # Tabs
 st.title("SP500 News Sentiment Dashboard")
-tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud"])
+tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"])
 
 # 1. Sentiment vs Price
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
 
-    # Company options
-    company_options = filtered_df['related'].unique().tolist()
-    selected_companies = st.multiselect("Select Company/Companies for sentiment", company_options, default=["S&P 500"])
-
-    # Filter sentiment data
-    sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
-    daily_sentiment = sentiment_df.groupby('date')['sentiment'].mean().reset_index()
-
-    # Load and filter S&P500 price
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
     price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df = price_df[price_df['date'].between(filtered_df['date'].min(), filtered_df['date'].max())]
 
-    # Combine data
-    df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
+    company_selection = st.multiselect("Select Companies (optional)", options=sorted(df['related'].unique()), default=["S&P 500"])
+    sentiment_df = filtered_df[filtered_df['related'].isin(company_selection)]
+
+    sentiment_daily = sentiment_df.groupby('date')['sentiment'].mean().reset_index()
+    price_filtered = price_df[price_df['date'].between(sentiment_df['date'].min(), sentiment_df['date'].max())]
+
+    df_plot = pd.merge(sentiment_daily, price_filtered[['date', 'close']], on='date', how='inner')
     df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
     if df_plot.empty:
-        st.warning("No data available for the selected filters.")
+        st.warning("No data available for the selected date range or company.")
     else:
-        # Draw
         base = alt.Chart(df_plot).encode(x='date:T')
 
         line_price = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q',
-                    axis=alt.Axis(title='S&P500 Price', titleColor='blue'),
-                    scale=alt.Scale(domain=[df_plot['Close Price'].min()*0.98, df_plot['Close Price'].max()*1.02])),
+            y=alt.Y('Close Price:Q', axis=alt.Axis(title='Price', titleColor='blue')),
             tooltip=['date:T', alt.Tooltip('Close Price:Q', format=',.2f')]
         )
 
         line_sentiment = base.mark_line(color='orange').encode(
-            y=alt.Y('Sentiment:Q',
-                    axis=alt.Axis(title='Sentiment', titleColor='orange'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
+            y=alt.Y('Sentiment:Q', axis=alt.Axis(title='Sentiment', titleColor='orange')),
             tooltip=['date:T', alt.Tooltip('Sentiment:Q', format='.3f')]
         )
 
         chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
-        # Stats
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Price Stats (S&P 500)")
+            st.subheader("Price Stats")
             st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
             st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
             st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
             st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
         with col2:
-            st.subheader("Sentiment Stats (Selected Company)")
+            st.subheader("Sentiment Stats")
             st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
             st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
             st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
             st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
 
-# 2. Mentions & Alert
+# 2. Mentions & Alerts
 with tabs[1]:
     st.header("Company Mentions and Alerts")
     mention_df = filtered_df[filtered_df['related'] != 'S&P 500']
@@ -110,23 +100,16 @@ with tabs[1]:
     summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
     st.dataframe(summary.sort_values("mention_count", ascending=False))
 
-# 3. Word Cloud and Keyword Headlines
+# 3. Word Cloud
 with tabs[2]:
     st.header("Sentiment Word Cloud")
+    all_tokens = [t.lower() for tokens in filtered_df['tokens'] for t in tokens if isinstance(t, str)]
+    cleaned_tokens = [re.sub(r'[^\w\s]', '', token) for token in all_tokens if token.isalpha()]
 
-    unique_df = filtered_df.drop_duplicates(subset="title")
-    all_tokens_raw = [token.lower() for tokens in unique_df['tokens'] for token in tokens if isinstance(token, str)]
-    cleaned_tokens = [re.sub(r'[^\w\s]', '', token) for token in all_tokens_raw if token.isalpha()]
-    stopwords = set(STOPWORDS).union({
-        'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its',
-        'with', 'are', 'a', 'an', 'this', 'that'
-    })
+    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its', 'with', 'are', 'a', 'an', 'this', 'that'})
     filtered_tokens = [word for word in cleaned_tokens if word not in stopwords and len(word) > 1]
 
-    wordcloud = WordCloud(
-        width=1000, height=500, background_color='white', stopwords=stopwords
-    ).generate(" ".join(filtered_tokens))
-
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', stopwords=stopwords).generate(" ".join(filtered_tokens))
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
@@ -134,14 +117,34 @@ with tabs[2]:
 
     st.subheader("Top 5 Keywords and Related Headlines")
     top_tokens = Counter(filtered_tokens).most_common(5)
-
     for word, _ in top_tokens:
         st.markdown(f"**{word}**")
         try:
             pattern = re.compile(rf'\b{re.escape(word)}\b', flags=re.IGNORECASE)
-            headlines = unique_df[unique_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5).tolist()
+            headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5).tolist()
             for h in headlines:
                 st.markdown(f"- {h}")
         except re.error:
             st.markdown("_Error parsing keyword pattern_")
 
+# 4. Prediction Tab
+with tabs[3]:
+    st.header("S&P 500 Price Prediction (Prophet Model)")
+
+    price_df = pd.read_csv("sp500_price_202005_202504.csv")
+    price_df['date'] = pd.to_datetime(price_df['date'])
+    price_df = price_df.rename(columns={"date": "ds", "close": "y"})
+
+    model = Prophet()
+    model.fit(price_df)
+
+    future = model.make_future_dataframe(periods=30)
+    forecast = model.predict(future)
+
+    fig1 = model.plot(forecast)
+    st.pyplot(fig1)
+
+    st.subheader("Forecast Table (Next 30 Days)")
+    st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(30).rename(columns={
+        "ds": "Date", "yhat": "Predicted Price", "yhat_lower": "Lower Bound", "yhat_upper": "Upper Bound"
+    }))
