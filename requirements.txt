@@ -5,3 +5,9 @@ wordcloud
 altair
 requests
 yfinance
+altair
+scikit-learn
+prophet
+python-dateutil
+transformers
+torch
