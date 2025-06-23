@@ -11,3 +11,4 @@ prophet
 python-dateutil
 transformers
 torc
+joblib
