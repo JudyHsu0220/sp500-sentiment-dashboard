@@ -11,6 +11,7 @@ from collections import Counter
 import string
 from prophet import Prophet
 import joblib
+import plotly.graph_objects as go
 
 # Session state to control sidebar
 if "active_tab" not in st.session_state:
@@ -169,8 +170,52 @@ with tabs[3]:
 
     st.caption(f"Forecasting starts from: {df_price['ds'].max().strftime('%Y-%m-%d')}")
 
-    fig1 = m.plot(forecast)
-    st.pyplot(fig1)
+    fig_plotly = go.Figure()
+
+    fig_plotly.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Predicted Price',
+        line=dict(color='blue')
+    ))
+
+    fig_plotly.add_trace(go.Scatter(
+        x=df_price['ds'],
+        y=df_price['y'],
+        mode='markers',
+        name='Actual Price',
+        marker=dict(color='black', size=4)
+    ))
+
+    fig_plotly.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_upper'],
+        mode='lines',
+        name='Upper Bound',
+        line=dict(width=0),
+        showlegend=False
+    ))
+
+    fig_plotly.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_lower'],
+        mode='lines',
+        name='Lower Bound',
+        fill='tonexty',
+        fillcolor='rgba(0, 0, 255, 0.2)',
+        line=dict(width=0),
+        showlegend=False
+    ))
+
+    fig_plotly.update_layout(
+        title='S&P 500 Forecast with Confidence Interval',
+        xaxis_title='Date',
+        yaxis_title='Price',
+        hovermode='x unified'
+    )
+
+    st.plotly_chart(fig_plotly, use_container_width=True)
 
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
