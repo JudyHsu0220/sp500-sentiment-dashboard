@@ -218,8 +218,8 @@ with tabs[3]:
     st.plotly_chart(fig_plotly, use_container_width=True)
 
     st.subheader("Forecast Table (Next 30 Days)")
-    forecast_display = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-    forecast_display = forecast_display[forecast_display['ds'] > df_price['ds'].max()]
+    forecast_display = forecast[forecast['ds'] >= df_price['ds'].max()].iloc[1:]
+    forecast_display = forecast_display[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
     forecast_display = forecast_display.rename(columns={
         'ds': 'Date',
         'yhat': 'Predicted Price',
