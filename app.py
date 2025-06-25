@@ -212,7 +212,11 @@ with tabs[3]:
         title='S&P 500 Forecast with Confidence Interval',
         xaxis_title='Date',
         yaxis_title='Price',
-        hovermode='x unified'
+        hovermode='x unified',
+        xaxis=dict(
+            tickformat='%Y-%m-%d',
+            hoverformat='%Y-%m-%d'
+        )
     )
 
     st.plotly_chart(fig_plotly, use_container_width=True)
