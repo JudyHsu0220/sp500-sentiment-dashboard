@@ -33,6 +33,9 @@ def load_data():
 df = load_data()
 
 # --- Sidebar ---
+st.sidebar.title("Filters")
+filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"], key="filter_mode")
+
 if filter_mode == "Date Range":
     start_date_raw = st.sidebar.date_input("Start Date", df['date'].min(), key="start_date")
     end_date_raw = st.sidebar.date_input("End Date", df['date'].max(), key="end_date")
