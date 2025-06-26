@@ -8,9 +8,7 @@ import ast
 from datetime import datetime
 import re
 from collections import Counter
-import string
 from prophet import Prophet
-import joblib
 import plotly.graph_objects as go
 
 # Session state to control sidebar
@@ -32,27 +30,20 @@ df = load_data()
 # Initialize page
 st.title("SP500 News Sentiment Dashboard")
 tabs = st.tabs(["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"])
-
-# Handle sidebar visibility based on tab
-active_tab = st.session_state.get("active_tab", "Sentiment vs Price")
 tab_labels = ["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"]
 
-# Sidebar
-if active_tab != "Prediction":
-    st.sidebar.title("Filters")
-    filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"])
-
-    if filter_mode == "Date Range":
-        start_date = st.sidebar.date_input("Start Date", df['date'].min())
-        end_date = st.sidebar.date_input("End Date", df['date'].max())
-        mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
-    else:
-        selected_date = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"))
-        mask = df['date'] == pd.to_datetime(selected_date)
-
-    filtered_df = df[mask]
+# Sidebar (always shown)
+st.sidebar.title("Filters")
+filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"])
+if filter_mode == "Date Range":
+    start_date = st.sidebar.date_input("Start Date", df['date'].min())
+    end_date = st.sidebar.date_input("End Date", df['date'].max())
+    mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
 else:
-    filtered_df = df.copy()
+    selected_date = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"))
+    mask = df['date'] == pd.to_datetime(selected_date)
+
+filtered_df = df[mask]
 
 # Update active tab
 for i, tab in enumerate(tabs):
@@ -63,7 +54,6 @@ for i, tab in enumerate(tabs):
 with tabs[0]:
     st.header("Sentiment and S&P500 Price Trend")
 
-    # Company filter
     company_options = filtered_df['related'].unique().tolist()
     selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
 
@@ -155,7 +145,6 @@ with tabs[2]:
 with tabs[3]:
     st.session_state.active_tab = "Prediction"
     st.header("S&P 500 Price Prediction")
-    st.info("This page is not applicable to filters.")
     st.caption("This prediction is based on historical prices, news sentiment, technical indicators, and macroeconomic variables.")
 
     df_price = pd.read_csv("sp500_price_202005_202504.csv")
@@ -168,13 +157,14 @@ with tabs[3]:
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
-    st.caption(f"Forecasting starts from: {df_price['ds'].max().strftime('%Y-%m-%d')}")
+    # Apply same filter as other tabs
+    forecast_filtered = forecast[(forecast['ds'] >= filtered_df['date'].min()) & (forecast['ds'] <= filtered_df['date'].max())]
 
     fig_plotly = go.Figure()
 
     fig_plotly.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat'],
+        x=forecast_filtered['ds'],
+        y=forecast_filtered['yhat'],
         mode='lines',
         name='Predicted Price',
         line=dict(color='blue')
@@ -189,8 +179,8 @@ with tabs[3]:
     ))
 
     fig_plotly.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat_upper'],
+        x=forecast_filtered['ds'],
+        y=forecast_filtered['yhat_upper'],
         mode='lines',
         name='Upper Bound',
         line=dict(width=0),
@@ -198,8 +188,8 @@ with tabs[3]:
     ))
 
     fig_plotly.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat_lower'],
+        x=forecast_filtered['ds'],
+        y=forecast_filtered['yhat_lower'],
         mode='lines',
         name='Lower Bound',
         fill='tonexty',
@@ -231,3 +221,5 @@ with tabs[3]:
         'yhat_upper': 'Upper Bound'
     })
     st.dataframe(forecast_display.reset_index(drop=True))
+
+    st.info("This part is not applicable to filters.")
