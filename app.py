@@ -33,17 +33,19 @@ def load_data():
 df = load_data()
 
 # --- Sidebar ---
-st.sidebar.title("Filters")
-filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"], key="filter_mode")
-
 if filter_mode == "Date Range":
-    start_date = st.sidebar.date_input("Start Date", df['date'].min(), key="start_date")
-    end_date = st.sidebar.date_input("End Date", df['date'].max(), key="end_date")
-    mask = (df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))
+    start_date_raw = st.sidebar.date_input("Start Date", df['date'].min(), key="start_date")
+    end_date_raw = st.sidebar.date_input("End Date", df['date'].max(), key="end_date")
+    start_date = pd.to_datetime(start_date_raw)
+    end_date = pd.to_datetime(end_date_raw)
+    mask = (df['date'] >= start_date) & (df['date'] <= end_date)
 else:
-    selected_date = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"), key="single_day")
-    mask = df['date'] == pd.to_datetime(selected_date)
-
+    selected_date_raw = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"), key="single_day")
+    selected_date = pd.to_datetime(selected_date_raw)
+    start_date = selected_date  # For later use
+    end_date = selected_date    # For later use
+    mask = df['date'] == selected_date
+    
 filtered_df = df[mask]
 
 # --- Sentiment vs Price Tab ---
