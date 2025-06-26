@@ -51,15 +51,31 @@ with tabs[0]:
     st.session_state.active_tab = tab_labels[0]
     st.header("Sentiment and S&P500 Price Trend")
 
-    company_options = filtered_df['related'].unique().tolist()
-    selected_companies = st.multiselect("Select Company/Companies", company_options, default=["S&P 500"])
-    sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
-    daily_sentiment = sentiment_df.groupby('date')['sentiment'].mean().reset_index()
+    # --- Company dropdown ---
+    company_options = sorted(filtered_df['related'].dropna().unique().tolist())
+    if "S&P 500" in company_options:
+        default_selection = ["S&P 500"]
+    elif company_options:
+        default_selection = [company_options[0]]
+    else:
+        default_selection = []
 
+    selected_companies = st.multiselect(
+        "Select Company/Companies",
+        options=company_options,
+        default=default_selection
+    )
+
+    # --- Filtered sentiment ---
+    sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
+    daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
+
+    # --- Load and filter price data (if not already loaded globally) ---
     price_df = pd.read_csv("sp500_price_202005_202504.csv")
     price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df = price_df[price_df['date'].between(filtered_df['date'].min(), filtered_df['date'].max())]
+    price_df = price_df[price_df['date'].between(start_date, end_date)]
 
+    # --- Merge for chart ---
     df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
     df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
@@ -67,8 +83,8 @@ with tabs[0]:
         st.warning("No data available for the selected filters.")
     else:
         base = alt.Chart(df_plot).encode(x='date:T')
-        line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q'))
-        line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q'))
+        line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', title="S&P500 Price"))
+        line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', title="Sentiment Score"))
         chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
