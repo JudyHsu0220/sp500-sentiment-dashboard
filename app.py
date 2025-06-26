@@ -156,6 +156,7 @@ with tabs[2]:
 with tabs[3]:
     st.session_state.active_tab = tab_labels[3]
     st.header("S&P 500 Price Prediction")
+    st.caption("⚠️ This page is not applicable to filters.")
 
     df_price = price_df.copy()
     df_price['ds'] = df_price['date']
@@ -179,8 +180,6 @@ with tabs[3]:
         hovermode='x unified'
     )
     st.plotly_chart(fig, use_container_width=True)
-
-    st.caption("⚠️ This part is not applicable to filters.")
 
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[forecast['ds'] > df_price['ds'].max()].iloc[:30]
