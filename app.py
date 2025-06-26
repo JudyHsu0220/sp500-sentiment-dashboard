@@ -8,7 +8,6 @@ import ast
 from datetime import datetime
 import re
 from collections import Counter
-import string
 from prophet import Prophet
 import joblib
 import plotly.graph_objects as go
@@ -45,11 +44,16 @@ if filter_mode == "Date Range":
 else:
     selected_date_raw = st.sidebar.date_input("Select Date", value=pd.to_datetime("2024-12-01"), key="single_day")
     selected_date = pd.to_datetime(selected_date_raw)
-    start_date = selected_date  # For later use
-    end_date = selected_date    # For later use
+    start_date = selected_date
+    end_date = selected_date
     mask = df['date'] == selected_date
-    
+
 filtered_df = df[mask]
+
+# --- Load price data (used in multiple tabs) ---
+price_df = pd.read_csv("sp500_price_202005_202504.csv")
+price_df['date'] = pd.to_datetime(price_df['date'])
+price_filtered = price_df[price_df['date'].between(start_date, end_date)]
 
 # --- Sentiment vs Price Tab ---
 with tabs[0]:
@@ -58,39 +62,36 @@ with tabs[0]:
 
     # --- Company dropdown ---
     company_options = sorted(filtered_df['related'].dropna().unique().tolist())
-    if "S&P 500" in company_options:
-        default_selection = ["S&P 500"]
-    elif company_options:
-        default_selection = [company_options[0]]
-    else:
-        default_selection = []
-
     selected_companies = st.multiselect(
         "Select Company/Companies",
         options=company_options,
-        default=default_selection
+        default=company_options  # 預設全選
     )
 
-    # --- Filtered sentiment ---
     sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
     daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
 
-    # --- Load and filter price data (if not already loaded globally) ---
-    price_df = pd.read_csv("sp500_price_202005_202504.csv")
-    price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df = price_df[price_df['date'].between(start_date, end_date)]
-
-    # --- Merge for chart ---
-    df_plot = pd.merge(daily_sentiment, price_df[['date', 'close']], on='date', how='inner')
+    # --- Merge with price data (always show price data) ---
+    df_plot = pd.merge(
+        price_filtered[['date', 'close']],
+        daily_sentiment,
+        on='date',
+        how='left'
+    )
     df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
-    if df_plot.empty:
-        st.warning("No data available for the selected filters.")
+    if df_plot.empty or df_plot['Close Price'].isna().all():
+        st.warning("No price data available for the selected filters.")
     else:
         base = alt.Chart(df_plot).encode(x='date:T')
         line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', title="S&P500 Price"))
-        line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', title="Sentiment Score"))
-        chart = alt.layer(line_price, line_sentiment).resolve_scale(y='independent').interactive()
+        chart_layers = [line_price]
+
+        if df_plot['Sentiment'].notna().any():
+            line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', title="Sentiment Score"))
+            chart_layers.append(line_sentiment)
+
+        chart = alt.layer(*chart_layers).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
         col1, col2 = st.columns(2)
@@ -100,10 +101,13 @@ with tabs[0]:
             st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
             st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
         with col2:
-            st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
-            st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
-            st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
-            st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
+            if df_plot['Sentiment'].notna().any():
+                st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
+                st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
+                st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
+                st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
+            else:
+                st.markdown("No sentiment data available.")
 
 # --- Mention & Alert Tab ---
 with tabs[1]:
@@ -127,31 +131,34 @@ with tabs[2]:
     stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its'})
     tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
-    wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(wordcloud, interpolation='bilinear')
-    ax.axis('off')
-    st.pyplot(fig)
+    if tokens:
+        wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.imshow(wordcloud, interpolation='bilinear')
+        ax.axis('off')
+        st.pyplot(fig)
 
-    st.subheader("Top 5 Keywords and Related Headlines")
-    top_words = Counter(tokens).most_common(5)
-    for word, _ in top_words:
-        st.markdown(f"**{word}**")
-        try:
-            pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
-            headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5)
-            for h in headlines:
-                st.markdown(f"- {h}")
-        except re.error:
-            st.markdown("_Regex error occurred_")
+        st.subheader("Top 5 Keywords and Related Headlines")
+        top_words = Counter(tokens).most_common(5)
+        for word, _ in top_words:
+            st.markdown(f"**{word}**")
+            try:
+                pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
+                headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5)
+                for h in headlines:
+                    st.markdown(f"- {h}")
+            except re.error:
+                st.markdown("_Regex error occurred_")
+    else:
+        st.warning("No tokens available to generate word cloud.")
 
 # --- Prediction Tab ---
 with tabs[3]:
     st.session_state.active_tab = tab_labels[3]
     st.header("S&P 500 Price Prediction")
 
-    df_price = pd.read_csv("sp500_price_202005_202504.csv")
-    df_price['ds'] = pd.to_datetime(df_price['date'])
+    df_price = price_df.copy()
+    df_price['ds'] = df_price['date']
     df_price['y'] = df_price['close']
 
     m = Prophet()
@@ -159,34 +166,24 @@ with tabs[3]:
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
-    # Prediction line chart with filters
-    filtered_dates = filtered_df['date']
-    chart_mask = (forecast['ds'] >= filtered_dates.min()) & (forecast['ds'] <= filtered_dates.max())
-
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=forecast.loc[chart_mask, 'ds'], y=forecast.loc[chart_mask, 'yhat'],
-                             mode='lines', name='Predicted Price', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df_price['ds'], y=df_price['y'], mode='markers',
-                             name='Actual Price', marker=dict(color='black', size=4)))
-    fig.add_trace(go.Scatter(x=forecast.loc[chart_mask, 'ds'], y=forecast.loc[chart_mask, 'yhat_upper'],
-                             mode='lines', line=dict(width=0), showlegend=False))
-    fig.add_trace(go.Scatter(x=forecast.loc[chart_mask, 'ds'], y=forecast.loc[chart_mask, 'yhat_lower'],
-                             mode='lines', fill='tonexty', fillcolor='rgba(0,0,255,0.2)',
-                             line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Predicted Price', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=df_price['ds'], y=df_price['y'], mode='markers', name='Actual Price', marker=dict(color='black', size=4)))
+    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], mode='lines', fill='tonexty',
+                             fillcolor='rgba(0,0,255,0.2)', line=dict(width=0), showlegend=False))
 
     fig.update_layout(
         title='S&P 500 Forecast with Confidence Interval',
         xaxis_title='Date', yaxis_title='Price',
-        hovermode='x unified',
-        xaxis=dict(tickformat='%Y-%m-%d', hoverformat='%Y-%m-%d')
+        hovermode='x unified'
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Forecast table
+    st.caption("⚠️ This part is not applicable to filters.")
+
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[forecast['ds'] > df_price['ds'].max()].iloc[:30]
     forecast_display = forecast_display[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
     forecast_display.columns = ['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound']
     st.dataframe(forecast_display.reset_index(drop=True))
-
-    st.caption("⚠️ This part is not applicable to filters.")
