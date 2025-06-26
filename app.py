@@ -163,27 +163,61 @@ with tabs[3]:
     df_price['ds'] = df_price['date']
     df_price['y'] = df_price['close']
 
-    # Forecast
+    # Prophet forecast
     m = Prophet()
     m.fit(df_price[['ds', 'y']])
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
-    # Plot
+    # Align forecast with actuals using index
+    forecast['actual'] = np.interp(
+        forecast['ds'].astype(np.int64),
+        df_price['ds'].astype(np.int64),
+        df_price['y']
+    )
+
+    # Merge date to use as customdata
+    forecast['date_str'] = forecast['ds'].dt.strftime('%Y-%m-%d')
+
+    # Build plotly chart
     fig = go.Figure()
 
-    # Upper Bound
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Predicted Price',
+        line=dict(color='blue'),
+        customdata=forecast[['date_str', 'actual', 'yhat_upper', 'yhat_lower']],
+        hovertemplate=(
+            'Date: %{customdata[0]}<br>'
+            'Predicted Price: %{y:.2f}<br>'
+            'Actual Price: %{customdata[1]:.2f}<br>'
+            'Upper Bound: %{customdata[2]:.2f}<br>'
+            'Lower Bound: %{customdata[3]:.2f}<extra></extra>'
+        )
+    ))
+
+    # Add actual price as dots (no hover to avoid redundancy)
+    fig.add_trace(go.Scatter(
+        x=df_price['ds'],
+        y=df_price['y'],
+        mode='markers',
+        name='Actual Price',
+        marker=dict(color='black', size=4),
+        hoverinfo='skip'
+    ))
+
     fig.add_trace(go.Scatter(
         x=forecast['ds'],
         y=forecast['yhat_upper'],
         mode='lines',
         name='Upper Bound',
         line=dict(width=0),
-        hovertemplate='Date: %{x|%Y-%m-%d}<br>Upper Bound: %{y:.2f}<extra></extra>',
-        showlegend=True
+        showlegend=True,
+        hoverinfo='skip'
     ))
 
-    # Lower Bound (filled area)
     fig.add_trace(go.Scatter(
         x=forecast['ds'],
         y=forecast['yhat_lower'],
@@ -192,28 +226,8 @@ with tabs[3]:
         fill='tonexty',
         fillcolor='rgba(0,0,255,0.2)',
         line=dict(width=0),
-        hovertemplate='Date: %{x|%Y-%m-%d}<br>Lower Bound: %{y:.2f}<extra></extra>',
-        showlegend=True
-    ))
-
-    # Actual Price
-    fig.add_trace(go.Scatter(
-        x=df_price['ds'],
-        y=df_price['y'],
-        mode='markers',
-        name='Actual Price',
-        marker=dict(color='black', size=4),
-        hovertemplate='Date: %{x|%Y-%m-%d}<br>Actual Price: %{y:.2f}<extra></extra>'
-    ))
-
-    # Predicted Price
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat'],
-        mode='lines',
-        name='Predicted Price',
-        line=dict(color='blue'),
-        hovertemplate='Date: %{x|%Y-%m-%d}<br>Predicted Price: %{y:.2f}<extra></extra>'
+        showlegend=True,
+        hoverinfo='skip'
     ))
 
     fig.update_layout(
