@@ -158,29 +158,74 @@ with tabs[3]:
     st.header("S&P 500 Price Prediction")
     st.caption("⚠️ This page is not applicable to filters.")
 
+    # Prepare data
     df_price = price_df.copy()
     df_price['ds'] = df_price['date']
     df_price['y'] = df_price['close']
 
+    # Forecast
     m = Prophet()
     m.fit(df_price[['ds', 'y']])
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
+    # Plot
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Predicted Price', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df_price['ds'], y=df_price['y'], mode='markers', name='Actual Price', marker=dict(color='black', size=4)))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], mode='lines', fill='tonexty',
-                             fillcolor='rgba(0,0,255,0.2)', line=dict(width=0), showlegend=False))
+
+    # Upper Bound
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_upper'],
+        mode='lines',
+        name='Upper Bound',
+        line=dict(width=0),
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Upper Bound: %{y:.2f}<extra></extra>',
+        showlegend=True
+    ))
+
+    # Lower Bound (filled area)
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_lower'],
+        mode='lines',
+        name='Lower Bound',
+        fill='tonexty',
+        fillcolor='rgba(0,0,255,0.2)',
+        line=dict(width=0),
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Lower Bound: %{y:.2f}<extra></extra>',
+        showlegend=True
+    ))
+
+    # Actual Price
+    fig.add_trace(go.Scatter(
+        x=df_price['ds'],
+        y=df_price['y'],
+        mode='markers',
+        name='Actual Price',
+        marker=dict(color='black', size=4),
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Actual Price: %{y:.2f}<extra></extra>'
+    ))
+
+    # Predicted Price
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Predicted Price',
+        line=dict(color='blue'),
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Predicted Price: %{y:.2f}<extra></extra>'
+    ))
 
     fig.update_layout(
         title='S&P 500 Forecast with Confidence Interval',
-        xaxis_title='Date', yaxis_title='Price',
+        xaxis_title='Date',
+        yaxis_title='Price',
         hovermode='x unified'
     )
+
     st.plotly_chart(fig, use_container_width=True)
 
+    # Forecast Table
     st.subheader("Forecast Table (Next 30 Days)")
     forecast_display = forecast[forecast['ds'] > df_price['ds'].max()].iloc[:30]
     forecast_display = forecast_display[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
