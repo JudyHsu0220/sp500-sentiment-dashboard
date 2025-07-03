@@ -5,11 +5,12 @@ wordcloud
 altair
 requests
 yfinance
-altair
 scikit-learn
 prophet
 python-dateutil
 transformers
-torc
+torch
 joblib
 plotly
+bertopic
+sentence-transformers
