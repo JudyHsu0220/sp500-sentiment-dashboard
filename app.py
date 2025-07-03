@@ -7,21 +7,17 @@ from wordcloud import WordCloud, STOPWORDS
 import ast
 from datetime import datetime
 import re
-from collections import Counter
 from prophet import Prophet
-import joblib
 import plotly.graph_objects as go
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
 
-# --- Session state to track active tab ---
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = "Sentiment vs Price"
 
 tab_labels = ["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"]
 tabs = st.tabs(tab_labels)
 
-# --- Load data ---
 @st.cache_data
 def load_data():
     df = pd.read_csv("merged_sentiment_cleaned_202005_202504.csv")
@@ -33,7 +29,6 @@ def load_data():
 
 df = load_data()
 
-# --- Sidebar ---
 st.sidebar.title("Filters")
 filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"], key="filter_mode")
 
@@ -51,12 +46,9 @@ else:
     mask = df['date'] == selected_date
 
 filtered_df = df[mask]
-
-# --- Load company-level price data ---
 company_price_df = pd.read_csv("company_price_202005_202504.csv")
 company_price_df['date'] = pd.to_datetime(company_price_df['date'])
 
-# --- Sentiment vs Price Tab ---
 with tabs[0]:
     st.session_state.active_tab = tab_labels[0]
     st.header("Sentiment and S&P500 Price Trend")
@@ -70,13 +62,11 @@ with tabs[0]:
         price_filtered['date'] = pd.to_datetime(price_filtered['date'])
         price_filtered = price_filtered[price_filtered['date'].between(start_date, end_date)]
         price_col = "close"
-        price_label = "S&P500 Price"
     else:
         sentiment_df = filtered_df[filtered_df['related'] == selected_company]
         price_filtered = company_price_df[(company_price_df['company'] == selected_company) &
                                           (company_price_df['date'].between(start_date, end_date))]
         price_col = "price"
-        price_label = f"{selected_company} Price"
 
     daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
     df_plot = pd.merge(price_filtered[['date', price_col]], daily_sentiment, on='date', how='left')
@@ -85,31 +75,46 @@ with tabs[0]:
     if df_plot.empty or df_plot['Close Price'].isna().all():
         st.warning("No price data available for the selected filters.")
     else:
-        base = alt.Chart(df_plot).encode(x='date:T')
-        line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', title="Price"))
-        chart_layers = [line_price]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_plot['date'],
+            y=df_plot['Close Price'],
+            mode='lines',
+            name='Price',
+            line=dict(color='blue')
+        ))
 
-        if df_plot['Sentiment'].notna().any():
-            line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', title="Sentiment Score"))
-            chart_layers.append(line_sentiment)
+        fig.add_trace(go.Scatter(
+            x=df_plot['date'],
+            y=df_plot['Sentiment'],
+            mode='markers',
+            name='Sentiment',
+            marker=dict(color='orange', size=6),
+            customdata=df_plot['Sentiment'],
+            hovertemplate=
+                'Date: %{x|%Y-%m-%d}<br>' +
+                'Price: %{y:.2f}<br>' +
+                'Sentiment: %{customdata:.3f}<extra></extra>',
+        ))
 
-        chart = alt.layer(*chart_layers).resolve_scale(y='independent').interactive()
-        st.altair_chart(chart, use_container_width=True)
+        fig.update_layout(
+            xaxis_title='Date',
+            yaxis_title='Price',
+            title=f"{selected_company} Price and Sentiment Trend",
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
             st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
             st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
-            st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
         with col2:
             if df_plot['Sentiment'].notna().any():
-                st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
-                st.metric("Max Sentiment", round(df_plot['Sentiment'].max(), 3))
                 st.metric("Mean Sentiment", round(df_plot['Sentiment'].mean(), 3))
-                st.metric("Std Dev Sentiment", round(df_plot['Sentiment'].std(), 3))
             else:
-                st.markdown("No sentiment data available.")
+                st.metric("Mean Sentiment", "N/A")
 
 # --- Mention & Alert Tab ---
 with tabs[1]:
@@ -122,6 +127,7 @@ with tabs[1]:
     ).reset_index()
     summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
     st.dataframe(summary.sort_values("mention_count", ascending=False))
+
 
 # --- Word Cloud Tab ---
 with tabs[2]:
@@ -149,11 +155,14 @@ with tabs[2]:
             topic_info = model.get_topic_info()
             displayed_titles = set()
 
-            for i in topic_info.head(5).itertuples():
-                if i.Topic == -1:
-                    continue
-                topic_name = model.get_topic(i.Topic)[0][0]
+            # 依據主題新聞數量排序，最多顯示前 5 名
+            top_topics = topic_info[topic_info.Topic != -1].nlargest(5, 'Count')
+
+            for i in top_topics.itertuples():
+                topic_words = model.get_topic(i.Topic)
+                topic_name = topic_words[0][0] if topic_words else f"Topic {i.Topic}"
                 st.markdown(f"**{topic_name}**")
+
                 topic_docs = model.get_representative_docs(i.Topic)
                 unique_titles = []
                 for doc in topic_docs:
@@ -168,6 +177,7 @@ with tabs[2]:
             st.error(f"Topic modeling failed: {e}")
     else:
         st.warning("No tokens available to generate word cloud.")
+
 
 # --- Prediction Tab ---
 with tabs[3]:
