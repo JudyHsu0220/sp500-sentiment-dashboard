@@ -78,12 +78,12 @@ with tabs[0]:
                                                   (company_price_df['date'].between(start_date, end_date))]
 
         df_plot = pd.merge(
-            company_price_filtered[['date', 'close']],
+            company_price_filtered[['date', 'price']],
             sentiment_daily,
             on='date',
             how='left'
         )
-        df_plot.rename(columns={'close': 'Price', 'sentiment': 'Sentiment'}, inplace=True)
+        df_plot.rename(columns={'price': 'Price', 'sentiment': 'Sentiment'}, inplace=True)
 
         if df_plot.empty or df_plot['Price'].isna().all():
             st.warning("No company price data available for the selected filters.")
