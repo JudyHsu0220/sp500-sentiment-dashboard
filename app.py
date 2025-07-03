@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 from collections import Counter
 from prophet import Prophet
+import joblib
 import plotly.graph_objects as go
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
@@ -30,21 +31,7 @@ def load_data():
     df['month'] = df['date'].dt.to_period('M')
     return df
 
-@st.cache_data
-def load_company_price():
-    df = pd.read_csv("https://raw.githubusercontent.com/JudyHsu0220/sp500-sentiment-dashboard/main/company_price_202005_202504.csv")
-    df['date'] = pd.to_datetime(df['date'])
-    return df
-
-@st.cache_data
-def load_index_price():
-    df = pd.read_csv("sp500_price_202005_202504.csv")
-    df['date'] = pd.to_datetime(df['date'])
-    return df
-
 df = load_data()
-price_df = load_index_price()
-company_price_df = load_company_price()
 
 # --- Sidebar ---
 st.sidebar.title("Filters")
@@ -65,36 +52,41 @@ else:
 
 filtered_df = df[mask]
 
+# --- Load company-level price data ---
+company_price_df = pd.read_csv("company_price_202005_202504.csv")
+company_price_df['date'] = pd.to_datetime(company_price_df['date'])
+
 # --- Sentiment vs Price Tab ---
 with tabs[0]:
     st.session_state.active_tab = tab_labels[0]
     st.header("Sentiment and S&P500 Price Trend")
 
-    # Dropdown - single select
     company_options = sorted(filtered_df['related'].dropna().unique().tolist())
-    default_company = "S&P 500" if "S&P 500" in company_options else company_options[0]
-    selected_company = st.selectbox("Select Company", options=company_options, index=company_options.index(default_company))
-
-    sentiment_df = filtered_df[filtered_df['related'] == selected_company]
-    daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
+    selected_company = st.selectbox("Select Company", options=["S&P 500"] + company_options, index=0)
 
     if selected_company == "S&P 500":
-        price_filtered = price_df[price_df['date'].between(start_date, end_date)].copy()
-        price_filtered.rename(columns={'close': 'price'}, inplace=True)
+        sentiment_df = filtered_df[filtered_df['related'] == "S&P 500"]
+        price_filtered = pd.read_csv("sp500_price_202005_202504.csv")
+        price_filtered['date'] = pd.to_datetime(price_filtered['date'])
+        price_filtered = price_filtered[price_filtered['date'].between(start_date, end_date)]
+        price_col = "close"
+        price_label = "S&P500 Price"
     else:
-        price_filtered = company_price_df[
-            (company_price_df['company'] == selected_company) &
-            (company_price_df['date'].between(start_date, end_date))
-        ]
+        sentiment_df = filtered_df[filtered_df['related'] == selected_company]
+        price_filtered = company_price_df[(company_price_df['company'] == selected_company) &
+                                          (company_price_df['date'].between(start_date, end_date))]
+        price_col = "price"
+        price_label = f"{selected_company} Price"
 
-    df_plot = pd.merge(price_filtered[['date', 'price']], daily_sentiment, on='date', how='left')
-    df_plot.rename(columns={'price': 'Price', 'sentiment': 'Sentiment'}, inplace=True)
+    daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
+    df_plot = pd.merge(price_filtered[['date', price_col]], daily_sentiment, on='date', how='left')
+    df_plot.rename(columns={price_col: 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
-    if df_plot.empty or df_plot['Price'].isna().all():
+    if df_plot.empty or df_plot['Close Price'].isna().all():
         st.warning("No price data available for the selected filters.")
     else:
         base = alt.Chart(df_plot).encode(x='date:T')
-        line_price = base.mark_line(color='blue').encode(y=alt.Y('Price:Q', title="Price"))
+        line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', title="Price"))
         chart_layers = [line_price]
 
         if df_plot['Sentiment'].notna().any():
@@ -106,10 +98,10 @@ with tabs[0]:
 
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Min Price", round(df_plot['Price'].min(), 2))
-            st.metric("Max Price", round(df_plot['Price'].max(), 2))
-            st.metric("Mean Price", round(df_plot['Price'].mean(), 2))
-            st.metric("Std Dev Price", round(df_plot['Price'].std(), 2))
+            st.metric("Min Price", round(df_plot['Close Price'].min(), 2))
+            st.metric("Max Price", round(df_plot['Close Price'].max(), 2))
+            st.metric("Mean Price", round(df_plot['Close Price'].mean(), 2))
+            st.metric("Std Dev Price", round(df_plot['Close Price'].std(), 2))
         with col2:
             if df_plot['Sentiment'].notna().any():
                 st.metric("Min Sentiment", round(df_plot['Sentiment'].min(), 3))
@@ -136,29 +128,46 @@ with tabs[2]:
     st.session_state.active_tab = tab_labels[2]
     st.header("Sentiment Word Cloud")
 
-    try:
-        docs = filtered_df['title'].dropna().unique().tolist()
-        if docs:
-            model = BERTopic(embedding_model=SentenceTransformer("all-MiniLM-L6-v2"))
-            topics, _ = model.fit_transform(docs)
-            topic_info = model.get_topic_info().head(6).iloc[1:]
+    tokens = [t.lower() for tokens in filtered_df['tokens'] for t in tokens if isinstance(t, str)]
+    tokens = [re.sub(r'[^\w\s]', '', t) for t in tokens if t.isalpha()]
+    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its'})
+    tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
-            shown_headlines = set()
-            st.subheader("Top 5 Topics and Related Headlines")
-            for _, row in topic_info.iterrows():
-                topic_num = row['Topic']
-                st.markdown(f"**Topic {topic_num}**")
-                topic_words = model.get_topic(topic_num)
-                if topic_words:
-                    topic_headlines = model.get_representative_docs()[topic_num][:5]
-                    for h in topic_headlines:
-                        if h not in shown_headlines:
-                            st.markdown(f"- {h}")
-                            shown_headlines.add(h)
-        else:
-            st.warning("No documents available for topic modeling.")
-    except Exception as e:
-        st.error(f"Topic modeling failed: {e}")
+    if tokens:
+        wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.imshow(wordcloud, interpolation='bilinear')
+        ax.axis('off')
+        st.pyplot(fig)
+
+        st.subheader("Top Topics and Related Headlines")
+        try:
+            docs = filtered_df['normalized_title'].dropna().astype(str).tolist()
+            model = BERTopic(embedding_model="all-MiniLM-L6-v2")
+            topics, _ = model.fit_transform(docs)
+
+            topic_info = model.get_topic_info()
+            displayed_titles = set()
+
+            for i in topic_info.head(5).itertuples():
+                if i.Topic == -1:
+                    continue
+                topic_name = model.get_topic(i.Topic)[0][0]
+                st.markdown(f"**{topic_name}**")
+                topic_docs = model.get_representative_docs(i.Topic)
+                unique_titles = []
+                for doc in topic_docs:
+                    if doc not in displayed_titles:
+                        unique_titles.append(doc)
+                        displayed_titles.add(doc)
+                    if len(unique_titles) == 10:
+                        break
+                for t in unique_titles:
+                    st.markdown(f"- {t}")
+        except Exception as e:
+            st.error(f"Topic modeling failed: {e}")
+    else:
+        st.warning("No tokens available to generate word cloud.")
 
 # --- Prediction Tab ---
 with tabs[3]:
@@ -166,26 +175,31 @@ with tabs[3]:
     st.header("S&P 500 Price Prediction")
     st.caption("⚠️ This page is not applicable to filters.")
 
-    df_price = price_df.copy()
-    df_price['ds'] = df_price['date']
-    df_price['y'] = df_price['close']
+    price_df = pd.read_csv("sp500_price_202005_202504.csv")
+    price_df['date'] = pd.to_datetime(price_df['date'])
+    price_df['ds'] = price_df['date']
+    price_df['y'] = price_df['close']
 
     m = Prophet()
-    m.fit(df_price[['ds', 'y']])
+    m.fit(price_df[['ds', 'y']])
     future = m.make_future_dataframe(periods=30)
     forecast = m.predict(future)
 
     forecast['actual'] = np.interp(
         forecast['ds'].astype(np.int64),
-        df_price['ds'].astype(np.int64),
-        df_price['y']
+        price_df['ds'].astype(np.int64),
+        price_df['y']
     )
     forecast['date_str'] = forecast['ds'].dt.strftime('%Y-%m-%d')
 
     fig = go.Figure()
+
     fig.add_trace(go.Scatter(
-        x=forecast['ds'], y=forecast['yhat'],
-        mode='lines', name='Predicted Price', line=dict(color='blue'),
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Predicted Price',
+        line=dict(color='blue'),
         customdata=forecast[['date_str', 'actual', 'yhat_upper', 'yhat_lower']],
         hovertemplate=(
             'Date: %{customdata[0]}<br>'
@@ -195,30 +209,49 @@ with tabs[3]:
             'Lower Bound: %{customdata[3]:.2f}<extra></extra>'
         )
     ))
+
     fig.add_trace(go.Scatter(
-        x=df_price['ds'], y=df_price['y'],
-        mode='markers', name='Actual Price',
-        marker=dict(color='black', size=4), hoverinfo='skip'
+        x=price_df['ds'],
+        y=price_df['y'],
+        mode='markers',
+        name='Actual Price',
+        marker=dict(color='black', size=4),
+        hoverinfo='skip'
     ))
+
     fig.add_trace(go.Scatter(
-        x=forecast['ds'], y=forecast['yhat_upper'],
-        mode='lines', name='Upper Bound', line=dict(width=0), showlegend=True, hoverinfo='skip'
+        x=forecast['ds'],
+        y=forecast['yhat_upper'],
+        mode='lines',
+        name='Upper Bound',
+        line=dict(width=0),
+        showlegend=True,
+        hoverinfo='skip'
     ))
+
     fig.add_trace(go.Scatter(
-        x=forecast['ds'], y=forecast['yhat_lower'],
-        mode='lines', name='Lower Bound',
-        fill='tonexty', fillcolor='rgba(0,0,255,0.2)',
-        line=dict(width=0), showlegend=True, hoverinfo='skip'
+        x=forecast['ds'],
+        y=forecast['yhat_lower'],
+        mode='lines',
+        name='Lower Bound',
+        fill='tonexty',
+        fillcolor='rgba(0,0,255,0.2)',
+        line=dict(width=0),
+        showlegend=True,
+        hoverinfo='skip'
     ))
+
     fig.update_layout(
         title='S&P 500 Forecast with Confidence Interval',
-        xaxis_title='Date', yaxis_title='Price',
+        xaxis_title='Date',
+        yaxis_title='Price',
         hovermode='x unified'
     )
+
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Forecast Table (Next 30 Days)")
-    forecast_display = forecast[forecast['ds'] > df_price['ds'].max()].iloc[:30]
+    forecast_display = forecast[forecast['ds'] > price_df['ds'].max()].iloc[:30]
     forecast_display = forecast_display[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
     forecast_display.columns = ['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound']
     st.dataframe(forecast_display.reset_index(drop=True))
