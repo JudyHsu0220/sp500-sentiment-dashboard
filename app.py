@@ -155,8 +155,8 @@ with tabs[2]:
     st.subheader("Top Topics and Related Headlines")
 
     # --- Load BERTopic model from .pkl ---
-    from bertopic import BERTopic
     import pickle
+    from bertopic import BERTopic
 
     try:
         with open("bertopic_model.pkl", "rb") as f:
@@ -165,15 +165,23 @@ with tabs[2]:
         st.error(f"❌ Failed to load BERTopic model: {e}")
         st.stop()
 
-    # --- Encode titles using the same embedding model ---
+    # --- Load same embedding model used during training ---
     from sentence_transformers import SentenceTransformer
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    # --- Encode titles using the same model ---
     docs = filtered_df['title'].astype(str).tolist()
     embeddings = embedding_model.encode(docs, show_progress_bar=False)
 
-    # --- Topic Inference ---
-    topics, _ = topic_model.transform(docs, embeddings)
-    filtered_df['topic'] = topics
+    # --- Inference ---
+    try:
+        topics, _ = topic_model.transform(docs, embeddings)
+        filtered_df['topic'] = topics
+    except Exception as e:
+        st.error(f"❌ Error during topic inference: {e}")
+        st.stop()
+
+    # --- Show top topics ---
     topic_freq = Counter(topics)
     top_topics = [topic for topic, _ in topic_freq.most_common(5) if topic != -1]
 
