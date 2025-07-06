@@ -196,30 +196,28 @@ with tabs[3]:
     st.header("S&P 500 Price Prediction")
     st.caption("⚠️ This page is not applicable to filters.")
 
-    # Load & prepare data
-    price_df = pd.read_csv("sp500_price_202005_202504.csv")
-    price_df['date'] = pd.to_datetime(price_df['date'])
-    price_df.rename(columns={"date": "ds", "close": "y"}, inplace=True)
+    # Prepare data
+    df_price = price_df.copy()
+    df_price['ds'] = df_price['date']
+    df_price['y'] = df_price['close']
 
-    # Load trained model
-    try:
-        model = joblib.load("prophet_model_sentiment.pkl")
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        st.stop()
+    # Prophet forecast
+    m = Prophet()
+    m.fit(df_price[['ds', 'y']])
+    future = m.make_future_dataframe(periods=30)
+    forecast = m.predict(future)
 
-    # Forecast
-    future = model.make_future_dataframe(periods=30)
-    forecast = model.predict(future)
-
+    # Align forecast with actuals using index
     forecast['actual'] = np.interp(
         forecast['ds'].astype(np.int64),
-        price_df['ds'].astype(np.int64),
-        price_df['y']
+        df_price['ds'].astype(np.int64),
+        df_price['y']
     )
+
+    # Merge date to use as customdata
     forecast['date_str'] = forecast['ds'].dt.strftime('%Y-%m-%d')
 
-    # Plot
+    # Build plotly chart
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(
@@ -228,24 +226,20 @@ with tabs[3]:
         mode='lines',
         name='Predicted Price',
         line=dict(color='blue'),
-        customdata=np.stack([
-            forecast['date_str'],
-            forecast['actual'],
-            forecast['yhat_upper'],
-            forecast['yhat_lower']
-        ], axis=-1),
+        customdata=forecast[['date_str', 'actual', 'yhat_upper', 'yhat_lower']],
         hovertemplate=(
-            'Date: %{customdata[0]}<br>' +
-            'Predicted Price: %{y:.2f}<br>' +
-            'Actual Price: %{customdata[1]:.2f}<br>' +
-            'Upper Bound: %{customdata[2]:.2f}<br>' +
+            'Date: %{customdata[0]}<br>'
+            'Predicted Price: %{y:.2f}<br>'
+            'Actual Price: %{customdata[1]:.2f}<br>'
+            'Upper Bound: %{customdata[2]:.2f}<br>'
             'Lower Bound: %{customdata[3]:.2f}<extra></extra>'
         )
     ))
 
+    # Add actual price as dots (no hover to avoid redundancy)
     fig.add_trace(go.Scatter(
-        x=price_df['ds'],
-        y=price_df['y'],
+        x=df_price['ds'],
+        y=df_price['y'],
         mode='markers',
         name='Actual Price',
         marker=dict(color='black', size=4),
@@ -275,17 +269,17 @@ with tabs[3]:
     ))
 
     fig.update_layout(
-        title="S&P 500 Forecast with Confidence Interval",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        hovermode="x unified"
+        title='S&P 500 Forecast with Confidence Interval',
+        xaxis_title='Date',
+        yaxis_title='Price',
+        hovermode='x unified'
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
+    # Forecast Table
     st.subheader("Forecast Table (Next 30 Days)")
-    future_df = forecast[forecast['ds'] > price_df['ds'].max()]
-    display_df = future_df[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-    display_df.columns = ['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound']
-    display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-    st.dataframe(display_df.reset_index(drop=True))
+    forecast_display = forecast[forecast['ds'] > df_price['ds'].max()].iloc[:30]
+    forecast_display = forecast_display[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+    forecast_display.columns = ['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound']
+    st.dataframe(forecast_display.reset_index(drop=True))
