@@ -11,16 +11,15 @@ from collections import Counter
 from prophet import Prophet
 import joblib
 import plotly.graph_objects as go
-from bertopic import BERTopic
-from sentence_transformers import SentenceTransformer
 
-# --- Session state ---
+# --- Session state to track active tab ---
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = "Sentiment vs Price"
 
 tab_labels = ["Sentiment vs Price", "Mention & Alert", "Word Cloud", "Prediction"]
 tabs = st.tabs(tab_labels)
 
+# --- Load data ---
 @st.cache_data
 def load_data():
     df = pd.read_csv("merged_sentiment_cleaned_202005_202504.csv")
@@ -32,6 +31,7 @@ def load_data():
 
 df = load_data()
 
+# --- Sidebar ---
 st.sidebar.title("Filters")
 filter_mode = st.sidebar.radio("Filter by", ["Date Range", "Single Day"], key="filter_mode")
 
@@ -50,58 +50,48 @@ else:
 
 filtered_df = df[mask]
 
-company_price_df = pd.read_csv("company_price_202005_202504.csv")
-company_price_df['date'] = pd.to_datetime(company_price_df['date'])
+# --- Load price data (used in multiple tabs) ---
+price_df = pd.read_csv("sp500_price_202005_202504.csv")
+price_df['date'] = pd.to_datetime(price_df['date'])
+price_filtered = price_df[price_df['date'].between(start_date, end_date)]
 
 # --- Sentiment vs Price Tab ---
 with tabs[0]:
     st.session_state.active_tab = tab_labels[0]
     st.header("Sentiment and S&P500 Price Trend")
 
+    # --- Company dropdown ---
     company_options = sorted(filtered_df['related'].dropna().unique().tolist())
-    selected_company = st.selectbox("Select Company", options=["S&P 500"] + company_options, index=0)
+    selected_companies = st.multiselect(
+        "Select Company/Companies",
+        options=company_options,
+        default=company_options  # 預設全選
+    )
 
-    if selected_company == "S&P 500":
-        sentiment_df = filtered_df[filtered_df['related'] == "S&P 500"]
-        price_filtered = pd.read_csv("sp500_price_202005_202504.csv")
-        price_filtered['date'] = pd.to_datetime(price_filtered['date'])
-        price_filtered = price_filtered[price_filtered['date'].between(start_date, end_date)]
-        price_col = "close"
-        price_label = "S&P500 Price"
-    else:
-        sentiment_df = filtered_df[filtered_df['related'] == selected_company]
-        price_filtered = company_price_df[(company_price_df['company'] == selected_company) &
-                                          (company_price_df['date'].between(start_date, end_date))]
-        price_col = "price"
-        price_label = f"{selected_company} Price"
-
+    sentiment_df = filtered_df[filtered_df['related'].isin(selected_companies)]
     daily_sentiment = sentiment_df.groupby('date', as_index=False)['sentiment'].mean()
-    df_plot = pd.merge(price_filtered[['date', price_col]], daily_sentiment, on='date', how='left')
-    df_plot.rename(columns={price_col: 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
+
+    # --- Merge with price data (always show price data) ---
+    df_plot = pd.merge(
+        price_filtered[['date', 'close']],
+        daily_sentiment,
+        on='date',
+        how='left'
+    )
+    df_plot.rename(columns={'close': 'Close Price', 'sentiment': 'Sentiment'}, inplace=True)
 
     if df_plot.empty or df_plot['Close Price'].isna().all():
         st.warning("No price data available for the selected filters.")
     else:
-        df_plot['Sentiment_display'] = df_plot['Sentiment'].round(2).astype(str).replace("nan", "N/A")
-        df_plot['Close Price'] = df_plot['Close Price'].round(2)
-        df_plot['date_str'] = df_plot['date'].dt.strftime('%Y-%m-%d')
-
         base = alt.Chart(df_plot).encode(x='date:T')
+        line_price = base.mark_line(color='blue').encode(y=alt.Y('Close Price:Q', title="S&P500 Price"))
+        chart_layers = [line_price]
 
-        price_line = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q', title="Price")
-        )
+        if df_plot['Sentiment'].notna().any():
+            line_sentiment = base.mark_line(color='orange').encode(y=alt.Y('Sentiment:Q', title="Sentiment Score"))
+            chart_layers.append(line_sentiment)
 
-        sentiment_points = base.mark_point(color='orange', size=40).encode(
-            y=alt.Y('Sentiment:Q', title="Sentiment Score"),
-            tooltip=[
-                alt.Tooltip('date_str:N', title='Date'),
-                alt.Tooltip('Close Price:Q', title='Price'),
-                alt.Tooltip('Sentiment_display:N', title='Sentiment')
-            ]
-        )
-
-        chart = alt.layer(price_line, sentiment_points).resolve_scale(y='independent').interactive()
+        chart = alt.layer(*chart_layers).resolve_scale(y='independent').interactive()
         st.altair_chart(chart, use_container_width=True)
 
         col1, col2 = st.columns(2)
@@ -122,73 +112,45 @@ with tabs[0]:
 # --- Mention & Alert Tab ---
 with tabs[1]:
     st.session_state.active_tab = tab_labels[1]
-    st.header("Mention Volume and Sentiment Alert")
-
-    mention_volume = filtered_df.groupby('related', as_index=False).size().sort_values('size', ascending=False)
-    top_mentions = mention_volume.head(20)
-
-    st.subheader("Top 20 Mentioned Companies")
-    st.bar_chart(data=top_mentions.set_index('related'), use_container_width=True)
-
-    sentiment_summary = filtered_df.groupby('related')['sentiment'].mean().reset_index()
-    negative_alerts = sentiment_summary[sentiment_summary['sentiment'] < -0.3].sort_values('sentiment')
-
-    st.subheader("Companies with Most Negative Sentiment")
-    st.dataframe(negative_alerts.head(10).rename(columns={'sentiment': 'Avg Sentiment'}))
+    st.header("Company Mentions and Alerts")
+    mention_df = filtered_df[filtered_df['related'] != 'S&P 500']
+    summary = mention_df.groupby("related").agg(
+        mention_count=('title', 'count'),
+        avg_sentiment=('sentiment', 'mean')
+    ).reset_index()
+    summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
+    st.dataframe(summary.sort_values("mention_count", ascending=False))
 
 # --- Word Cloud Tab ---
 with tabs[2]:
     st.session_state.active_tab = tab_labels[2]
-    st.header("Word Cloud and Top Topics")
+    st.header("Sentiment Word Cloud")
 
-    all_tokens = [token for tokens in filtered_df['tokens'].dropna() for token in tokens]
-    if not all_tokens:
-        st.warning("No tokens found for selected date range.")
-    else:
-        word_freq = Counter(all_tokens)
-        wordcloud = WordCloud(width=800, height=300, background_color='white').generate_from_frequencies(word_freq)
-        fig, ax = plt.subplots(figsize=(10, 4))
+    tokens = [t.lower() for tokens in filtered_df['tokens'] for t in tokens if isinstance(t, str)]
+    tokens = [re.sub(r'[^\w\s]', '', t) for t in tokens if t.isalpha()]
+    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its'})
+    tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
+
+    if tokens:
+        wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
+        fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis("off")
+        ax.axis('off')
         st.pyplot(fig)
 
-    st.subheader("Top Topics and Related Headlines")
-
-    # --- Load BERTopic model from .pkl ---
-    import joblib
-    from bertopic import BERTopic
-    
-    try:
-        topic_model = joblib.load("bertopic_model.pkl")
-    except Exception as e:
-        st.error(f"❌ Failed to load BERTopic model: {e}")
-        st.stop()
-
-    # --- Load same embedding model used during training ---
-    from sentence_transformers import SentenceTransformer
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-
-    # --- Encode titles using the same model ---
-    docs = filtered_df['title'].astype(str).tolist()
-    embeddings = embedding_model.encode(docs, show_progress_bar=False)
-
-    # --- Inference ---
-    try:
-        topics, _ = topic_model.transform(docs, embeddings)
-        filtered_df['topic'] = topics
-    except Exception as e:
-        st.error(f"❌ Error during topic inference: {e}")
-        st.stop()
-
-    # --- Show top topics ---
-    topic_freq = Counter(topics)
-    top_topics = [topic for topic, _ in topic_freq.most_common(5) if topic != -1]
-
-    for idx, topic_num in enumerate(top_topics, 1):
-        st.markdown(f"**Topic {idx}**")
-        topic_headlines = filtered_df[filtered_df['topic'] == topic_num]['title'].dropna().unique().tolist()
-        for title in topic_headlines[:10]:
-            st.write(f"- {title}")
+        st.subheader("Top 5 Keywords and Related Headlines")
+        top_words = Counter(tokens).most_common(5)
+        for word, _ in top_words:
+            st.markdown(f"**{word}**")
+            try:
+                pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
+                headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5)
+                for h in headlines:
+                    st.markdown(f"- {h}")
+            except re.error:
+                st.markdown("_Regex error occurred_")
+    else:
+        st.warning("No tokens available to generate word cloud.")
 
 # --- Prediction Tab ---
 with tabs[3]:
