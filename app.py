@@ -155,12 +155,11 @@ with tabs[2]:
     st.subheader("Top Topics and Related Headlines")
 
     # --- Load BERTopic model from .pkl ---
-    import pickle
+    import joblib
     from bertopic import BERTopic
-
+    
     try:
-        with open("bertopic_model.pkl", "rb") as f:
-            topic_model = pickle.load(f)
+        topic_model = joblib.load("bertopic_model.pkl")
     except Exception as e:
         st.error(f"❌ Failed to load BERTopic model: {e}")
         st.stop()
