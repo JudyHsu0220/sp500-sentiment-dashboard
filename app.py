@@ -173,6 +173,9 @@ with tabs[3]:
     st.header("S&P 500 Price Prediction")
     st.caption("⚠️ This page is not applicable to filters.")
 
+    price_df = pd.read_csv("sp500_price_202005_202504.csv")
+    price_df['date'] = pd.to_datetime(price_df['date'])
+    
     # Prepare data
     df_price = price_df.copy()
     df_price['ds'] = df_price['date']
