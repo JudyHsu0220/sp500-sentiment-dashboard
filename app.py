@@ -11,8 +11,6 @@ from collections import Counter
 from prophet import Prophet
 import joblib
 import plotly.graph_objects as go
-from bertopic import BERTopic
-from sentence_transformers import SentenceTransformer
 
 # --- Session state ---
 if "active_tab" not in st.session_state:
