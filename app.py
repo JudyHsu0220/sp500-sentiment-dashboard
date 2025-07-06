@@ -139,33 +139,33 @@ with tabs[1]:
 # --- Word Cloud Tab ---
 with tabs[2]:
     st.session_state.active_tab = tab_labels[2]
-    st.header("Word Cloud and Top Topics")
+    st.header("Sentiment Word Cloud")
 
-    all_tokens = [token for tokens in filtered_df['tokens'].dropna() for token in tokens]
-    if not all_tokens:
-        st.warning("No tokens found for selected date range.")
-    else:
-        word_freq = Counter(all_tokens)
-        wordcloud = WordCloud(width=800, height=300, background_color='white').generate_from_frequencies(word_freq)
-        fig, ax = plt.subplots(figsize=(10, 4))
+    tokens = [t.lower() for tokens in filtered_df['tokens'] for t in tokens if isinstance(t, str)]
+    tokens = [re.sub(r'[^\w\s]', '', t) for t in tokens if t.isalpha()]
+    stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its'})
+    tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
+
+    if tokens:
+        wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
+        fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis("off")
+        ax.axis('off')
         st.pyplot(fig)
 
-    st.subheader("Top Topics and Related Headlines")
-    topic_model = BERTopic.load("bertopic_model")  # Make sure to upload or build this model
-    embeddings = SentenceTransformer("all-MiniLM-L6-v2").encode(filtered_df['title'].astype(str).tolist(), show_progress_bar=False)
-    topics, _ = topic_model.transform(filtered_df['title'].astype(str).tolist(), embeddings)
-
-    filtered_df['topic'] = topics
-    topic_freq = Counter(topics)
-    top_topics = [topic for topic, _ in topic_freq.most_common(5) if topic != -1]
-
-    for idx, topic_num in enumerate(top_topics, 1):
-        st.markdown(f"**Topic {idx}**")
-        topic_headlines = filtered_df[filtered_df['topic'] == topic_num]['title'].dropna().unique().tolist()
-        for title in topic_headlines[:10]:
-            st.write(f"- {title}")
+        st.subheader("Top 5 Keywords and Related Headlines")
+        top_words = Counter(tokens).most_common(5)
+        for word, _ in top_words:
+            st.markdown(f"**{word}**")
+            try:
+                pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
+                headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5)
+                for h in headlines:
+                    st.markdown(f"- {h}")
+            except re.error:
+                st.markdown("_Regex error occurred_")
+    else:
+        st.warning("No tokens available to generate word cloud.")
 
 # --- Prediction Tab ---
 with tabs[3]:
