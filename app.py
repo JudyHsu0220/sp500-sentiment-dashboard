@@ -153,10 +153,26 @@ with tabs[2]:
         st.pyplot(fig)
 
     st.subheader("Top Topics and Related Headlines")
-    topic_model = BERTopic.load("bertopic_model")  # Make sure to upload or build this model
-    embeddings = SentenceTransformer("all-MiniLM-L6-v2").encode(filtered_df['title'].astype(str).tolist(), show_progress_bar=False)
-    topics, _ = topic_model.transform(filtered_df['title'].astype(str).tolist(), embeddings)
 
+    # --- Load BERTopic model from .pkl ---
+    from bertopic import BERTopic
+    import pickle
+
+    try:
+        with open("bertopic_model.pkl", "rb") as f:
+            topic_model = pickle.load(f)
+    except Exception as e:
+        st.error(f"❌ Failed to load BERTopic model: {e}")
+        st.stop()
+
+    # --- Encode titles using the same embedding model ---
+    from sentence_transformers import SentenceTransformer
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    docs = filtered_df['title'].astype(str).tolist()
+    embeddings = embedding_model.encode(docs, show_progress_bar=False)
+
+    # --- Topic Inference ---
+    topics, _ = topic_model.transform(docs, embeddings)
     filtered_df['topic'] = topics
     topic_freq = Counter(topics)
     top_topics = [topic for topic, _ in topic_freq.most_common(5) if topic != -1]
