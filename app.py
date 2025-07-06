@@ -122,19 +122,14 @@ with tabs[0]:
 # --- Mention & Alert Tab ---
 with tabs[1]:
     st.session_state.active_tab = tab_labels[1]
-    st.header("Mention Volume and Sentiment Alert")
-
-    mention_volume = filtered_df.groupby('related', as_index=False).size().sort_values('size', ascending=False)
-    top_mentions = mention_volume.head(20)
-
-    st.subheader("Top 20 Mentioned Companies")
-    st.bar_chart(data=top_mentions.set_index('related'), use_container_width=True)
-
-    sentiment_summary = filtered_df.groupby('related')['sentiment'].mean().reset_index()
-    negative_alerts = sentiment_summary[sentiment_summary['sentiment'] < -0.3].sort_values('sentiment')
-
-    st.subheader("Companies with Most Negative Sentiment")
-    st.dataframe(negative_alerts.head(10).rename(columns={'sentiment': 'Avg Sentiment'}))
+    st.header("Company Mentions and Alerts")
+    mention_df = filtered_df[filtered_df['related'] != 'S&P 500']
+    summary = mention_df.groupby("related").agg(
+        mention_count=('title', 'count'),
+        avg_sentiment=('sentiment', 'mean')
+    ).reset_index()
+    summary['alert'] = summary['avg_sentiment'].apply(lambda x: '❗️' if x < -0.5 else '')
+    st.dataframe(summary.sort_values("mention_count", ascending=False))
 
 # --- Word Cloud Tab ---
 with tabs[2]:
