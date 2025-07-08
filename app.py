@@ -86,19 +86,24 @@ with tabs[0]:
         df_plot['Close Price'] = df_plot['Close Price'].round(2)
         df_plot['date_str'] = df_plot['date'].dt.strftime('%Y-%m-%d')
 
-        base = alt.Chart(df_plot).encode(x='date:T')
+        base = alt.Chart(df_plot).encode(
+            x=alt.X('date:T', title="Date")
+        )
+
+        tooltip = [
+            alt.Tooltip('date_str:N', title='Date'),
+            alt.Tooltip('Close Price:Q', title='Price'),
+            alt.Tooltip('Sentiment_display:N', title='Sentiment')
+        ]
 
         price_line = base.mark_line(color='blue').encode(
-            y=alt.Y('Close Price:Q', title="Price")
+            y=alt.Y('Close Price:Q', title="Price"),
+            tooltip=tooltip
         )
 
         sentiment_points = base.mark_point(color='orange', size=40).encode(
             y=alt.Y('Sentiment:Q', title="Sentiment Score"),
-            tooltip=[
-                alt.Tooltip('date_str:N', title='Date'),
-                alt.Tooltip('Close Price:Q', title='Price'),
-                alt.Tooltip('Sentiment_display:N', title='Sentiment')
-            ]
+            tooltip=tooltip
         )
 
         chart = alt.layer(price_line, sentiment_points).resolve_scale(y='independent').interactive()
