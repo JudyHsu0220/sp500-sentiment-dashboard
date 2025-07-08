@@ -147,12 +147,14 @@ with tabs[2]:
     tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
     if tokens:
+        # --- Word Cloud ---
         wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
         ax.axis('off')
         st.pyplot(fig)
 
+        # --- Top 5 Keywords ---
         st.subheader("Top 5 Keywords and Related Headlines")
         top_words = Counter(tokens).most_common(5)
         for word, _ in top_words:
@@ -164,6 +166,27 @@ with tabs[2]:
                     st.markdown(f"- {h}")
             except re.error:
                 st.markdown("_Regex error occurred_")
+
+        # --- Top Topics ---
+        st.subheader("Top Topics")
+        try:
+            topic_model = BERTopic.load("bertopic_model.pkl")  # 確保你已經存好模型
+            titles = filtered_df['title'].dropna().unique().tolist()
+            if titles:
+                topics, _ = topic_model.transform(titles)
+                topic_df = pd.DataFrame({'title': titles, 'topic': topics})
+                top_topic_ids = topic_df['topic'].value_counts().head(3).index.tolist()
+
+                for topic_id in top_topic_ids:
+                    st.markdown(f"**Topic {topic_id}**")
+                    topic_titles = topic_df[topic_df['topic'] == topic_id]['title'].head(5)
+                    for t in topic_titles:
+                        st.markdown(f"- {t}")
+            else:
+                st.info("No titles available for topic modeling.")
+        except Exception as e:
+            st.error(f"⚠️ Failed to generate topics: {str(e)}")
+
     else:
         st.warning("No tokens available to generate word cloud.")
 
