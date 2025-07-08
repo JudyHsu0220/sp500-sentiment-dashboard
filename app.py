@@ -167,14 +167,22 @@ with tabs[2]:
             except re.error:
                 st.markdown("_Regex error occurred_")
 
-        # --- Top Topics ---
+        # --- Top Topics using TF-IDF + KMeans ---
         st.subheader("Top Topics")
         try:
-            topic_model = BERTopic.load("bertopic_model.pkl")  # 確保你已經存好模型
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.cluster import KMeans
+
             titles = filtered_df['title'].dropna().unique().tolist()
-            if titles:
-                topics, _ = topic_model.transform(titles)
-                topic_df = pd.DataFrame({'title': titles, 'topic': topics})
+            if titles and len(titles) >= 3:
+                vectorizer = TfidfVectorizer(stop_words='english', max_features=500)
+                X = vectorizer.fit_transform(titles)
+
+                k = min(3, len(titles))  # 最多3群
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                clusters = kmeans.fit_predict(X)
+
+                topic_df = pd.DataFrame({'title': titles, 'topic': clusters})
                 top_topic_ids = topic_df['topic'].value_counts().head(3).index.tolist()
 
                 for topic_id in top_topic_ids:
@@ -183,7 +191,7 @@ with tabs[2]:
                     for t in topic_titles:
                         st.markdown(f"- {t}")
             else:
-                st.info("No titles available for topic modeling.")
+                st.info("Not enough titles for topic modeling.")
         except Exception as e:
             st.error(f"⚠️ Failed to generate topics: {str(e)}")
 
