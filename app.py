@@ -147,54 +147,44 @@ with tabs[2]:
     tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
     if tokens:
-        # --- Word Cloud ---
         wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
         ax.axis('off')
         st.pyplot(fig)
-
-        # --- Top 5 Keywords ---
-        st.subheader("Top 5 Keywords and Related Headlines")
-        top_words = Counter(tokens).most_common(5)
-        for word, _ in top_words:
-            st.markdown(f"**{word}**")
-            try:
-                pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
-                headlines = filtered_df[filtered_df['title'].str.contains(pattern, na=False)]['title'].drop_duplicates().head(5)
-                for h in headlines:
-                    st.markdown(f"- {h}")
-            except re.error:
-                st.markdown("_Regex error occurred_")
-
+        
         # --- Top Topics using TF-IDF + KMeans ---
         st.subheader("Top Topics")
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
-            from sklearn.cluster import KMeans
 
-            titles = filtered_df['title'].dropna().unique().tolist()
-            if titles and len(titles) >= 3:
-                vectorizer = TfidfVectorizer(stop_words='english', max_features=500)
-                X = vectorizer.fit_transform(titles)
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.cluster import KMeans
 
-                k = min(3, len(titles))  # 最多3群
-                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-                clusters = kmeans.fit_predict(X)
+        titles = filtered_df['title'].dropna().tolist()
 
-                topic_df = pd.DataFrame({'title': titles, 'topic': clusters})
-                top_topic_ids = topic_df['topic'].value_counts().head(3).index.tolist()
+        if len(titles) >= 3:
+            vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
+            X = vectorizer.fit_transform(titles)
+            k = min(3, len(titles))  # Avoid error if fewer titles
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            kmeans.fit(X)
+            clusters = kmeans.labels_
 
-                for topic_id in top_topic_ids:
-                    st.markdown(f"**Topic {topic_id}**")
-                    topic_titles = topic_df[topic_df['topic'] == topic_id]['title'].head(5)
-                    for t in topic_titles:
-                        st.markdown(f"- {t}")
-            else:
-                st.info("Not enough titles for topic modeling.")
-        except Exception as e:
-            st.error(f"⚠️ Failed to generate topics: {str(e)}")
+            filtered_df['cluster'] = clusters
+            terms = vectorizer.get_feature_names_out()
+            topic_keywords = {}
 
+            for i in range(k):
+                center = kmeans.cluster_centers_[i]
+                top_indices = center.argsort()[-3:][::-1]
+                topic_keywords[i] = [terms[ind] for ind in top_indices]
+
+            for i in sorted(topic_keywords.keys()):
+                st.markdown(f"**Topic {i+1}: {' / '.join(topic_keywords[i])}**")
+                top_headlines = filtered_df[filtered_df['cluster'] == i]['title'].drop_duplicates().head(10)
+                for h in top_headlines:
+                    st.markdown(f"- {h}")
+        else:
+            st.info("Not enough headlines to extract meaningful topics.")
     else:
         st.warning("No tokens available to generate word cloud.")
 
