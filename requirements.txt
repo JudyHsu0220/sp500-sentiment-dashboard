@@ -12,3 +12,5 @@ transformers
 torch
 joblib
 plotly
+gensim
+nltk
