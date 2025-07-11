@@ -13,6 +13,7 @@ import joblib
 import plotly.graph_objects as go
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
+from gensim import corpora, models
 
 # --- Session state ---
 if "active_tab" not in st.session_state:
@@ -147,44 +148,52 @@ with tabs[2]:
     tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
     if tokens:
+        # Word Cloud
         wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
         ax.axis('off')
         st.pyplot(fig)
 
+        # Top Topics using LDA
         st.subheader("Top Topics")
+        from gensim import corpora, models
+        from gensim.utils import simple_preprocess
+        from nltk.corpus import stopwords as nltk_stopwords
+        import nltk
+        nltk.download('stopwords', quiet=True)
 
-        # --- Train BERTopic model on the fly ---
         headlines = filtered_df['title'].dropna().unique().tolist()
+
         if len(headlines) >= 5:
-            with st.spinner("Generating topics with BERTopic..."):
-                from bertopic import BERTopic
-                from sentence_transformers import SentenceTransformer
+            # Preprocess headlines
+            stop_words = set(nltk_stopwords.words('english'))
+            docs = [[word for word in simple_preprocess(title) if word not in stop_words]
+                    for title in headlines]
 
-                embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-                topic_model = BERTopic(language="english", embedding_model=embed_model, verbose=False)
-                topics, _ = topic_model.fit_transform(headlines)
+            # Create dictionary and corpus
+            dictionary = corpora.Dictionary(docs)
+            corpus = [dictionary.doc2bow(doc) for doc in docs]
 
-                topic_info = topic_model.get_topic_info()
-                top_topics = topic_info[topic_info.Topic != -1].head(3)
+            # Train LDA model
+            lda_model = models.LdaModel(corpus=corpus, num_topics=3, id2word=dictionary, passes=10, random_state=42)
 
-                for idx, row in top_topics.iterrows():
-                    topic_num = row['Topic']
-                    words = topic_model.get_topic(topic_num)
-                    topic_words = " / ".join([w[0] for w in words[:3]])
-                    st.markdown(f"**Topic {idx + 1}: {topic_words}**")
+            # Display top 3 topics
+            for i, topic in lda_model.show_topics(num_topics=3, formatted=False):
+                topic_words = " / ".join([word for word, _ in topic[:3]])
+                st.markdown(f"**Topic {i+1}: {topic_words}**")
 
-                    related_headlines = [headlines[i] for i, t in enumerate(topics) if t == topic_num]
-                    seen = set()
-                    count = 0
-                    for h in related_headlines:
-                        if h not in seen:
-                            st.markdown(f"- {h}")
-                            seen.add(h)
-                            count += 1
-                        if count == 5:
-                            break
+                # Find top headlines related to this topic
+                topic_headlines = []
+                for idx, bow in enumerate(corpus):
+                    topic_probs = lda_model.get_document_topics(bow)
+                    dominant_topic = max(topic_probs, key=lambda x: x[1])[0]
+                    if dominant_topic == i:
+                        topic_headlines.append(headlines[idx])
+                topic_headlines = list(dict.fromkeys(topic_headlines))  # Remove duplicates
+
+                for h in topic_headlines[:5]:
+                    st.markdown(f"- {h}")
         else:
             st.warning("Not enough headlines for topic modeling.")
     else:
