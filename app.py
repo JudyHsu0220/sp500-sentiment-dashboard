@@ -11,7 +11,6 @@ from collections import Counter
 from prophet import Prophet
 import joblib
 import plotly.graph_objects as go
-from gensim import corpora, models
 
 # --- Session state ---
 if "active_tab" not in st.session_state:
@@ -146,54 +145,48 @@ with tabs[2]:
     tokens = [word for word in tokens if word not in stopwords and len(word) > 1]
 
     if tokens:
-        # Word Cloud
         wordcloud = WordCloud(width=1000, height=500, background_color='white').generate(" ".join(tokens))
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.imshow(wordcloud, interpolation='bilinear')
         ax.axis('off')
         st.pyplot(fig)
 
-        # Top Topics using LDA
+        # --- Top Topics using TF-IDF + KMeans ---
         st.subheader("Top Topics")
-        from gensim import corpora, models
-        from gensim.utils import simple_preprocess
-        from nltk.corpus import stopwords as nltk_stopwords
-        import nltk
-        nltk.download('stopwords', quiet=True)
 
-        headlines = filtered_df['title'].dropna().unique().tolist()
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.cluster import KMeans
 
-        if len(headlines) >= 5:
-            # Preprocess headlines
-            stop_words = set(nltk_stopwords.words('english'))
-            docs = [[word for word in simple_preprocess(title) if word not in stop_words]
-                    for title in headlines]
+        titles = filtered_df['title'].dropna().tolist()
 
-            # Create dictionary and corpus
-            dictionary = corpora.Dictionary(docs)
-            corpus = [dictionary.doc2bow(doc) for doc in docs]
+        if len(titles) >= 3:
+            vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
+            X = vectorizer.fit_transform(titles)
+            k = min(3, len(titles))  # avoid error if fewer titles
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            kmeans.fit(X)
+            clusters = kmeans.labels_
 
-            # Train LDA model
-            lda_model = models.LdaModel(corpus=corpus, num_topics=3, id2word=dictionary, passes=10, random_state=42)
+            filtered_df['cluster'] = clusters
+            terms = vectorizer.get_feature_names_out()
+            topic_keywords = {}
 
-            # Display top 3 topics
-            for i, topic in lda_model.show_topics(num_topics=3, formatted=False):
-                topic_words = " / ".join([word for word, _ in topic[:3]])
-                st.markdown(f"**Topic {i+1}: {topic_words}**")
+            for i in range(k):
+                center = kmeans.cluster_centers_[i]
+                top_indices = center.argsort()[-3:][::-1]
+                topic_keywords[i] = [terms[ind] for ind in top_indices]
 
-                # Find top headlines related to this topic
-                topic_headlines = []
-                for idx, bow in enumerate(corpus):
-                    topic_probs = lda_model.get_document_topics(bow)
-                    dominant_topic = max(topic_probs, key=lambda x: x[1])[0]
-                    if dominant_topic == i:
-                        topic_headlines.append(headlines[idx])
-                topic_headlines = list(dict.fromkeys(topic_headlines))  # Remove duplicates
-
-                for h in topic_headlines[:5]:
+            for i in sorted(topic_keywords.keys()):
+                st.markdown(f"**Topic {i+1}: {' / '.join(topic_keywords[i])}**")
+                top_headlines = (
+                    filtered_df[filtered_df['cluster'] == i]['title']
+                    .drop_duplicates()
+                    .head(5)
+                )
+                for h in top_headlines:
                     st.markdown(f"- {h}")
         else:
-            st.warning("Not enough headlines for topic modeling.")
+            st.info("Not enough headlines to extract meaningful topics.")
     else:
         st.warning("No tokens available to generate word cloud.")
 
