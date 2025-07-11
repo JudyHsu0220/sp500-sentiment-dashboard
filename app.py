@@ -162,7 +162,7 @@ with tabs[2]:
         if len(titles) >= 2:
             vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
             X = vectorizer.fit_transform(titles)
-            k = min(3, len(titles))  # avoid error if fewer titles
+            k = min(2, len(titles))  # avoid error if fewer titles
             kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
             kmeans.fit(X)
             clusters = kmeans.labels_
