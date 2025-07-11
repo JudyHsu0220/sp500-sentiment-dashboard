@@ -14,5 +14,3 @@ joblib
 plotly
 bertopic
 sentence-transformers
-gensim
-nltk
