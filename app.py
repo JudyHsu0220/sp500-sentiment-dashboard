@@ -11,8 +11,6 @@ from collections import Counter
 from prophet import Prophet
 import joblib
 import plotly.graph_objects as go
-from bertopic import BERTopic
-from sentence_transformers import SentenceTransformer
 
 # --- Session state ---
 if "active_tab" not in st.session_state:
@@ -141,7 +139,6 @@ with tabs[2]:
     st.session_state.active_tab = tab_labels[2]
     st.header("Sentiment Word Cloud")
 
-    # --- Generate WordCloud ---
     tokens = [t.lower() for tokens in filtered_df['tokens'] for t in tokens if isinstance(t, str)]
     tokens = [re.sub(r'[^\w\s]', '', t) for t in tokens if t.isalpha()]
     stopwords = set(STOPWORDS).union({'the', 'in', 'it', 'of', 'to', 'and', 'as', 'for', 'on', 'is', 'its'})
@@ -154,41 +151,42 @@ with tabs[2]:
         ax.axis('off')
         st.pyplot(fig)
 
-        # --- Load Trained BERTopic Model ---
+        # --- Top Topics using TF-IDF + KMeans ---
         st.subheader("Top Topics")
 
-        headlines = filtered_df['title'].dropna().unique().tolist()
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.cluster import KMeans
 
-        if len(headlines) >= 5:
-            with st.spinner("Loading BERTopic model and generating topics..."):
-                from bertopic import BERTopic
+        titles = filtered_df['title'].dropna().tolist()
 
-                # Load pretrained model
-                topic_model = BERTopic.load("bertopic_model.pkl")  # Or use full GitHub path if loading remotely
+        if len(titles) >= 3:
+            vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
+            X = vectorizer.fit_transform(titles)
+            k = min(3, len(titles))  # avoid error if fewer titles
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            kmeans.fit(X)
+            clusters = kmeans.labels_
 
-                topics, _ = topic_model.transform(headlines)
+            filtered_df['cluster'] = clusters
+            terms = vectorizer.get_feature_names_out()
+            topic_keywords = {}
 
-                topic_info = topic_model.get_topic_info()
-                top_topics = topic_info[topic_info.Topic != -1].head(3)
+            for i in range(k):
+                center = kmeans.cluster_centers_[i]
+                top_indices = center.argsort()[-3:][::-1]
+                topic_keywords[i] = [terms[ind] for ind in top_indices]
 
-                for idx, row in top_topics.iterrows():
-                    topic_num = row['Topic']
-                    words = topic_model.get_topic(topic_num)
-                    topic_words = " / ".join([w[0] for w in words[:3]])
-                    st.markdown(f"**Topic {idx + 1}: {topic_words}**")
-
-                    related_headlines = [headlines[i] for i, t in enumerate(topics) if t == topic_num]
-                    seen = set()
-                    count = 0
-                    for h in related_headlines:
-                        if h not in seen:
-                            st.markdown(f"- {h}")
-                            seen.add(h)
-                            count += 1
-                        if count == 5:
-                            break
+            for i in sorted(topic_keywords.keys()):
+                st.markdown(f"**Topic {i+1}: {' / '.join(topic_keywords[i])}**")
+                top_headlines = (
+                    filtered_df[filtered_df['cluster'] == i]['title']
+                    .drop_duplicates()
+                    .head(5)
+                )
+                for h in top_headlines:
+                    st.markdown(f"- {h}")
         else:
-            st.warning("Not enough headlines for topic modeling.")
+            st.info("Not enough headlines to extract meaningful topics.")
     else:
         st.warning("No tokens available to generate word cloud.")
 
